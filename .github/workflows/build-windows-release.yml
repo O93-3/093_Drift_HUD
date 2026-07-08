@@ -63,6 +63,9 @@ jobs:
           SimHub passthrough:
           127.0.0.1:8001
 
+          Exit HUD:
+          Ctrl + Shift + Q
+
           Keep this whole folder together.
           Do not move only the exe.
           "@ | Set-Content -Path (Join-Path $releaseDir "README_PUBLIC_TEST_01.txt") -Encoding UTF8
