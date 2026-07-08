@@ -27,7 +27,7 @@ jobs:
 
       - name: Build exe
         run: |
-          python -m PyInstaller --noconfirm --clean --windowed --name "093_Drift_HUD" `
+          python -m PyInstaller --noconfirm --clean --windowed --name "093_Drift_HUD" --collect-all PyQt6 `
             --add-data "hud_config.json;." `
             --add-data "hud_profile.json;." `
             --add-data "overlay_layout.json;." `
@@ -45,30 +45,37 @@ jobs:
           New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
           Copy-Item -Path "dist\093_Drift_HUD\*" -Destination $releaseDir -Recurse -Force
 
-          @"
-          @echo off
-          cd /d "%~dp0"
-          start "" "093_Drift_HUD.exe"
-          "@ | Set-Content -Path (Join-Path $releaseDir "START_093_DRIFT_HUD.bat") -Encoding ASCII
+          $startBat = @(
+            '@echo off',
+            'cd /d "%~dp0"',
+            'start "" "093_Drift_HUD.exe"'
+          )
+          Set-Content -Path (Join-Path $releaseDir "START_093_DRIFT_HUD.bat") -Value $startBat -Encoding ASCII
 
-          @"
-          093 Drift HUD - Public Test 01
-
-          Start:
-          Double-click START_093_DRIFT_HUD.bat
-
-          FH6 Data Out:
-          127.0.0.1:5300
-
-          SimHub passthrough:
-          127.0.0.1:8001
-
-          Exit HUD:
-          Ctrl + Shift + Q
-
-          Keep this whole folder together.
-          Do not move only the exe.
-          "@ | Set-Content -Path (Join-Path $releaseDir "README_PUBLIC_TEST_01.txt") -Encoding UTF8
+          $readme = @(
+            '093 Drift HUD - Public Test 01',
+            '',
+            'Start:',
+            'Double-click START_093_DRIFT_HUD.bat',
+            '',
+            'FH6 / Forza Horizon Data Out:',
+            '127.0.0.1:5300',
+            '',
+            'SimHub passthrough:',
+            '127.0.0.1:8001',
+            '',
+            'Exit HUD:',
+            'Ctrl + Shift + Q',
+            '',
+            'HUD profiles:',
+            'Ctrl + F9 switches profiles.',
+            '1440p displays start in 1440P STREAM.',
+            '1080p displays automatically start in the dedicated 1080P STREAM layout.',
+            '',
+            'Keep this whole folder together.',
+            'Do not move only the exe.'
+          )
+          Set-Content -Path (Join-Path $releaseDir "README_PUBLIC_TEST_01.txt") -Value $readme -Encoding UTF8
 
       - name: Zip public release
         shell: pwsh
