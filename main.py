@@ -1229,15 +1229,19 @@ class AngleOverlay(QWidget):
         except Exception:
             return False
 
-    def _global_combo_pressed_once(self, combo_name, vk):
+    def _global_combo_pressed_once(self, combo_name, vk, require_shift=False):
         ctrl_down = self._global_key_down(0x11) or self._global_key_down(0xA2) or self._global_key_down(0xA3)
-        down = ctrl_down and self._global_key_down(vk)
+        shift_down = self._global_key_down(0x10) or self._global_key_down(0xA0) or self._global_key_down(0xA1)
+        down = ctrl_down and (shift_down if require_shift else True) and self._global_key_down(vk)
         was_down = combo_name in self._hotkey_prev_down
         if down:
             self._hotkey_prev_down.add(combo_name)
         else:
             self._hotkey_prev_down.discard(combo_name)
         return down and not was_down
+
+    def _exit_hud(self):
+        self.close()
 
     def _hud_profile_config_path(self):
         return Path(__file__).resolve().parent / HUD_PROFILE_FILE
@@ -1322,6 +1326,7 @@ class AngleOverlay(QWidget):
             ("Ctrl + F11", "HELP / KEY LIST"),
             ("Ctrl + F12", "TRACK MAP RESET"),
             ("Ctrl + Shift + L", "TRACK MAP RESET"),
+            ("Ctrl + Shift + Q", "EXIT HUD"),
             ("Alt + Drag", "MOVE PANEL"),
         ]
 
@@ -1377,7 +1382,12 @@ class AngleOverlay(QWidget):
 
     def _poll_global_hotkeys(self):
         # Windows virtual-key codes:
-        # F1-F12 = 0x70-0x7B.  Polling works even when FH6 has focus.
+        # F1-F12 = 0x70-0x7B. Q = 0x51.
+        # Polling works even when FH6 has focus.
+        if self._global_combo_pressed_once("CTRL_SHIFT_Q_EXIT", 0x51, require_shift=True):
+            self._exit_hud()
+            return
+
         hotkeys = [
             ("CTRL_F1", 0x70, lambda: self._toggle_all_hud()),
             ("CTRL_F2", 0x71, lambda: self._toggle_panel_visibility("left", "CAR STATUS")),
@@ -1404,6 +1414,10 @@ class AngleOverlay(QWidget):
         mods = event.modifiers()
         ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
         shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+
+        if ctrl and shift and key == Qt.Key.Key_Q:
+            self._exit_hud()
+            return
 
         # LIVE164 visibility / operation controls.
         if ctrl and key == Qt.Key.Key_F1:
@@ -1447,7 +1461,7 @@ class AngleOverlay(QWidget):
             return
 
         if key == Qt.Key.Key_Escape:
-            self.close()
+            self._exit_hud()
             return
 
         if key == Qt.Key.Key_Space:

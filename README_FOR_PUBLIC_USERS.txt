@@ -20,3 +20,10 @@ SimHub passthrough:
 
 Keep the whole extracted folder together.
 Do not move only the exe.
+
+
+Exit HUD:
+
+```text
+Ctrl + Shift + Q
+```

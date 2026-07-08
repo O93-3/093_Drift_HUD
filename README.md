@@ -147,6 +147,7 @@ Ctrl + F9   HUD PROFILE NEXT
 Ctrl + F10  SHOW CURRENT PROFILE
 Ctrl + F11  HELP / KEY LIST
 Ctrl + F12  TRACK MAP RESET
+Ctrl + Shift + Q  EXIT HUD
 Alt + Drag  MOVE PANEL
 ```
 

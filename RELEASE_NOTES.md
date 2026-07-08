@@ -45,3 +45,10 @@ Optional SimHub passthrough:
 - Telemetry detection may change.
 - Layout may change.
 - Windows exe should be built on Windows using `build_windows_exe.bat`.
+
+
+Exit HUD:
+
+```text
+Ctrl + Shift + Q
+```
