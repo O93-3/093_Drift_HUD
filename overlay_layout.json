@@ -1,0 +1,38 @@
+{
+  "vehicle_info": [
+    26.0,
+    26.0
+  ],
+  "input": [
+    4.0,
+    115.0
+  ],
+  "drift_panel": [
+    23.0,
+    137.0
+  ],
+  "style_panel": [
+    -1732.0,
+    383.0
+  ],
+  "map_panel": [
+    24.0,
+    72.0
+  ],
+  "g_meter": [
+    24.0,
+    154.0
+  ],
+  "steer_panel": [
+    0.0,
+    135.0
+  ],
+  "popup_panel": [
+    -5.0,
+    236.0
+  ],
+  "operation_popup_panel": [
+    638.0,
+    854.0
+  ]
+}

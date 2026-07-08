@@ -1,0 +1,8 @@
+093 Drift HUD - Public Test 01
+
+Copyright (c) 2026 おくすりさん。
+
+This public test package is provided for testing and feedback.
+A formal open-source license can be added later if the project is released as open source.
+
+Until then, please do not redistribute modified builds as official releases.
