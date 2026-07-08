@@ -196,3 +196,25 @@ LIVE191 1080p compact fix:
 
 LIVE192 force-exit cleanup:
 - Ctrl + Shift + Q now stops HUD timers, closes UDP sockets, quits the Qt app, and force-exits if Windows leaves the overlay in background processes.
+
+
+LIVE193 1080P TRUE SCALE SELF TEST
+- 1080P profile uses 0.75x true-scale sizing from 1440p.
+- Starts in 1080P STREAM for immediate testing.
+- Offsets are scaled in 1080P so 1440p saved layout does not explode on 1080p.
+
+## Self start / old method
+
+For local testing, double-click:
+
+```text
+CLICK_START_093_DRIFT_HUD.bat
+```
+
+This uses the old/simple method: run `main.py` directly with Python.
+
+Exit HUD:
+
+```text
+Ctrl + Shift + Q
+```

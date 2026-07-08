@@ -1216,7 +1216,7 @@ class AngleOverlay(QWidget):
         painter.drawRoundedRect(QRectF(x, y, box_w, box_h), 9, 9)
         painter.setPen(QPen(QColor(STREET_MINT.red(), STREET_MINT.green(), STREET_MINT.blue(), int(alpha * 0.72)), 1.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawRoundedRect(QRectF(x + 1, y + 1, box_w - 2, box_h - 2), 9, 9)
-        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Consolas", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), int(alpha * 0.58)))
         painter.drawText(QRectF(x + 14, y + 7, box_w - 28, 12), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "093 HUD CONTROL")
         painter.setFont(QFont("Arial Black", 14))
@@ -1409,11 +1409,11 @@ class AngleOverlay(QWidget):
         painter.drawLine(QPointF(x + 24, y + 52), QPointF(x + 178, y + 48))
         painter.drawLine(QPointF(x + box_w - 132, y + box_h - 32), QPointF(x + box_w - 24, y + box_h - 36))
 
-        painter.setFont(QFont("Arial Black", 18))
+        painter.setFont(QFont("Arial Black", self._font_size(18)))
         painter.setPen(QColor(250, 253, 255, alpha))
         painter.drawText(QRectF(x + 24, y + 16, box_w - 48, 28), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "093 HUD KEY LIST")
 
-        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Consolas", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_MINT.red(), STREET_MINT.green(), STREET_MINT.blue(), int(alpha * 0.72)))
         painter.drawText(QRectF(x + box_w - 170, y + 22, 144, 18), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "CTRL + F11 TO CLOSE")
 
@@ -1430,11 +1430,11 @@ class AngleOverlay(QWidget):
             painter.setPen(QColor(STREET_AMBER.red(), STREET_AMBER.green(), STREET_AMBER.blue(), int(alpha * 0.94)))
             painter.drawText(QRectF(x + 30, yy, key_w, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, key_text)
 
-            painter.setFont(QFont("Bahnschrift", 10, QFont.Weight.Bold))
+            painter.setFont(QFont("Bahnschrift", self._font_size(10), QFont.Weight.Bold))
             painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), int(alpha * 0.90)))
             painter.drawText(QRectF(x + 192, yy, box_w - 222, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, desc)
 
-        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Consolas", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), int(alpha * 0.54)))
         painter.drawText(QRectF(x + 24, y + box_h - 24, box_w - 48, 16), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "AUTO CLOSE: 10 SEC")
 
@@ -1641,30 +1641,54 @@ class AngleOverlay(QWidget):
     def _is_1080p_profile(self):
         return str(getattr(self, "hud_profile", "")).startswith("1080P")
 
+    def _ui_scale(self):
+        # 1440p -> 1080p is 0.75.  Use a true ratio scale for the dedicated 1080p HUD.
+        return 0.75 if self._is_1080p_profile() else 1.0
+
+    def _s(self, value):
+        return int(round(float(value) * self._ui_scale()))
+
+    def _sf(self, value):
+        return float(value) * self._ui_scale()
+
+    def _font_size(self, value, minimum=6):
+        return max(int(minimum), int(round(float(value) * self._ui_scale())))
+
+    def _widget_offset(self, name):
+        dx, dy = self.widget_offsets.get(name, [0.0, 0.0])
+        if self._is_1080p_profile():
+            s = self._ui_scale()
+            return dx * s, dy * s
+        return dx, dy
+
     def _profile_metric(self, name, default_value):
         """Profile-specific geometry tuning. 1080p uses dedicated panel sizes, not global scaling."""
         if not self._is_1080p_profile():
             return default_value
         metrics = {
-            "angle_half_width_factor": 0.150,
-            "angle_half_width_max": 318.0,
-            "angle_rise_factor": 0.048,
-            "angle_rise_max": 46.0,
-            "angle_cy_factor": 0.876,
-            "angle_bottom_pad": 42.0,
-            "map_w_factor": 0.86,
-            "map_h_factor": 0.84,
-            "g_w_factor": 0.86,
-            "g_h_factor": 0.84,
-            "drift_w_factor": 0.88,
-            "drift_h_factor": 0.88,
-            "steer_w_factor": 0.92,
-            "steer_h_factor": 0.92,
-            "popup_w_factor": 0.92,
-            "popup_h_factor": 0.92,
-            "op_popup_w_factor": 0.92,
-            "op_popup_h_factor": 0.92,
-            "right_margin": 26,
+            # True 1440p -> 1080p visual ratio.  Keep everything crisp by using integer
+            # geometry/font sizes rather than bitmap scaling.
+            "angle_half_width_factor": 0.123,
+            "angle_half_width_max": 272.0,
+            "angle_rise_factor": 0.037,
+            "angle_rise_max": 40.0,
+            "angle_cy_factor": 0.882,
+            "angle_bottom_pad": 33.0,
+            "map_w_factor": 0.75,
+            "map_h_factor": 0.75,
+            "g_w_factor": 0.75,
+            "g_h_factor": 0.75,
+            "drift_w_factor": 0.75,
+            "drift_h_factor": 0.75,
+            "steer_w_factor": 0.75,
+            "steer_h_factor": 0.75,
+            "input_w_factor": 0.68,
+            "input_h_factor": 0.66,
+            "popup_w_factor": 0.75,
+            "popup_h_factor": 0.75,
+            "op_popup_w_factor": 0.75,
+            "op_popup_h_factor": 0.75,
+            "right_margin": 28,
         }
         return metrics.get(name, default_value)
 
@@ -1760,7 +1784,7 @@ class AngleOverlay(QWidget):
         painter.drawLine(QPointF(x1, y1 - l), QPointF(x1, y1 - 18))
 
         # Micro UI details: technical, but not noisy.
-        painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
+        painter.setFont(QFont("Consolas", self._font_size(7), QFont.Weight.Bold))
         painter.setPen(QColor(218, 232, 242, 116))
         painter.drawText(QRectF(x0 + 22, y0 + 21, 150, 12), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "093 / EDGE TRACE")
         painter.setPen(QPen(mint, 1.7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
@@ -1989,7 +2013,7 @@ class AngleOverlay(QWidget):
             painter.drawLine(p1, p2)
     def draw_angle_labels(self, painter):
         layout = self._layout()
-        painter.setFont(QFont("Bahnschrift", 13, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(13), QFont.Weight.Bold))
 
         for value in (-60, -40, -20, 0, 20, 40, 60):
             t = value / 60.0
@@ -2060,33 +2084,37 @@ class AngleOverlay(QWidget):
         painter.drawPolygon(triangle_points(11.5, 7.1, 8.1))
 
     def vehicle_info_geometry(self):
-        # All frame widths shortened by about 5% while keeping the right edge aligned.
-        map_w = int(456 * 0.80 * 0.95)
-        w = map_w
-        h = 187
-        x = self.width() - w - 38
-        y = 34
-        dx, dy = self.widget_offsets.get("vehicle_info", [0.0, 0.0])
-        return x + dx, y + dy, w, h
+        # 1080p compact CAR INFO; clamp so saved 1440p offsets never push it out.
+        s = 0.75 if self._is_1080p_profile() else 1.0
+        w = int(round(456 * 0.80 * 0.95 * s))
+        h = int(round(187 * s))
+        x = self.width() - w - self._profile_metric("right_margin", 38)
+        y = self._s(34)
+        dx, dy = self._widget_offset("vehicle_info")
+        x = clamp(x + dx, 8, self.width() - w - 8)
+        y = clamp(y + dy, 8, self.height() - h - 8)
+        return x, y, w, h
 
     def input_group_geometry(self):
-        # Default INPUT position: a little to the left of the HOLD area,
-        # near the angle gauge instead of high on the screen.
+        # 1080p INPUT is clamped to the screen bottom. This prevents the saved
+        # 1440p offset from hiding the pedal bars below the display.
         layout = self._layout()
         hold_anchor = self.curve_point(-0.96, layout)
-        w = int(154 * 0.95)
-        h = 206
-        x = hold_anchor.x() - w - 26
-        y = hold_anchor.y() - 102
-        dx, dy = self.widget_offsets.get("input", [0.0, 0.0])
-        return x + dx, y + dy, w, h
+        w = int(round(154 * 0.95 * self._profile_metric("input_w_factor", 1.0)))
+        h = int(round(206 * self._profile_metric("input_h_factor", 1.0)))
+        x = hold_anchor.x() - w - self._s(26)
+        y = hold_anchor.y() - self._s(118 if self._is_1080p_profile() else 102)
+        dx, dy = self._widget_offset("input")
+        x = clamp(x + dx, 8, self.width() - w - 8)
+        y = clamp(y + dy, 8, self.height() - h - 8)
+        return x, y, w, h
 
     def steer_panel_geometry(self):
         # No-frame mini WHEEL / COUNTER panel.
         layout = self._layout()
         hold_anchor = self.curve_point(-0.96, layout)
-        input_w = int(154 * 0.95)
-        input_h = 206
+        input_w = int(154 * 0.95 * self._profile_metric("input_w_factor", 1.0))
+        input_h = int(206 * self._profile_metric("input_h_factor", 1.0))
         iy = hold_anchor.y() - 102
 
         # Profile-aware WHEEL / COUNTER: 1080p keeps readable bars but uses a tighter shell.
@@ -2107,7 +2135,7 @@ class AngleOverlay(QWidget):
 
         # Keep the user's vertical offset, but ignore horizontal offset so the zero line
         # continues to follow the ANGLE gauge zero across profiles/resolutions.
-        _dx, dy = self.widget_offsets.get("steer_panel", [0.0, 0.0])
+        _dx, dy = self._widget_offset("steer_panel")
         return x, y + dy, w, h
 
     def steer_panel_rect(self):
@@ -2119,8 +2147,8 @@ class AngleOverlay(QWidget):
         w = int(456 * 0.80 * 0.95 * self._profile_metric("map_w_factor", 1.0))
         h = int(240 * 1.30 * 0.90 * self._profile_metric("map_h_factor", 1.0))
         x = self.width() - w - self._profile_metric("right_margin", 38)
-        y = 166
-        dx, dy = self.widget_offsets.get("map_panel", [0.0, 0.0])
+        y = self._s(166)
+        dx, dy = self._widget_offset("map_panel")
         return x + dx, y + dy, w, h
     def g_meter_geometry(self):
         # G telemetry is independently placed and independently draggable.
@@ -2128,33 +2156,35 @@ class AngleOverlay(QWidget):
         w = int(456 * 0.80 * 0.95 * self._profile_metric("g_w_factor", 1.0))
         h = int(250 * self._profile_metric("g_h_factor", 1.0))
         x = self.width() - w - self._profile_metric("right_margin", 38)
-        y = 388
-        dx, dy = self.widget_offsets.get("g_meter", [0.0, 0.0])
+        y = self._s(388)
+        dx, dy = self._widget_offset("g_meter")
         return x + dx, y + dy, w, h
 
     def drift_panel_geometry(self):
-        # Default initial position aligned to the reference layout screenshot.
-        w = int(360 * 0.95 * self._profile_metric("drift_w_factor", 1.0))
-        h = int(270 * self._profile_metric("drift_h_factor", 1.0))
+        # 1080p CAR STATUS uses a compact draw path, but still clamps to screen.
+        w = int(round(360 * 0.95 * self._profile_metric("drift_w_factor", 1.0)))
+        h = int(round(270 * self._profile_metric("drift_h_factor", 1.0)))
         x = self.width() - w - self._profile_metric("right_margin", 38)
-        y = 646
-        dx, dy = self.widget_offsets.get("drift_panel", [0.0, 0.0])
-        return x + dx, y + dy, w, h
+        y = self._s(646)
+        dx, dy = self._widget_offset("drift_panel")
+        x = clamp(x + dx, 8, self.width() - w - 8)
+        y = clamp(y + dy, 8, self.height() - h - 8)
+        return x, y, w, h
 
     def style_panel_geometry(self):
-        w = int(360 * 0.95)
-        x = self.width() - w - 50
-        y = 386
-        h = 178
-        dx, dy = self.widget_offsets.get("style_panel", [0.0, 0.0])
+        w = int(360 * 0.95 * (0.75 if self._is_1080p_profile() else 1.0))
+        x = self.width() - w - self._s(50)
+        y = self._s(386)
+        h = self._s(178)
+        dx, dy = self._widget_offset("style_panel")
         return x + dx, y + dy, w, h
 
     def popup_panel_geometry(self):
         w = int(430 * 0.95 * self._profile_metric("popup_w_factor", 1.0))
         h = int(118 * self._profile_metric("popup_h_factor", 1.0))
         x = (self.width() - w) * 0.5
-        y = 34
-        dx, dy = self.widget_offsets.get("popup_panel", [0.0, 0.0])
+        y = self._s(34)
+        dx, dy = self._widget_offset("popup_panel")
         return x + dx, y + dy, w, h
 
     def operation_popup_panel_geometry(self):
@@ -2163,8 +2193,8 @@ class AngleOverlay(QWidget):
         w = int(430 * 0.95 * self._profile_metric("op_popup_w_factor", 1.0))
         h = int(96 * self._profile_metric("op_popup_h_factor", 1.0))
         x = (self.width() - w) * 0.5
-        y = 86
-        dx, dy = self.widget_offsets.get("operation_popup_panel", [0.0, 0.0])
+        y = self._s(86)
+        dx, dy = self._widget_offset("operation_popup_panel")
         return x + dx, y + dy, w, h
 
     def draw_reference_panel(self, painter, x, y, w, h, title=None, accent=None, alpha=34):
@@ -2545,7 +2575,7 @@ class AngleOverlay(QWidget):
             painter.setBrush(core)
             painter.drawRoundedRect(hi_rect, 0.9, 0.9)
 
-        painter.setFont(QFont("Arial Black", 10))
+        painter.setFont(QFont("Arial Black", self._font_size(10)))
         painter.setPen(QColor(242, 248, 255, 226))
         painter.drawText(QRectF(x - 7, y + h + 4, w + 14, 18), Qt.AlignmentFlag.AlignCenter, label)
 
@@ -2741,7 +2771,165 @@ class AngleOverlay(QWidget):
         painter.setPen(QColor(76, 234, 255, 242))
         painter.drawText(QRectF(x + 18, y + 6, max(84, w - 36), 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, 'CAR INFO')
 
+
+    def draw_vehicle_info_1080(self, painter):
+        x, y, w, h = self.vehicle_info_geometry()
+        self.draw_cyber_panel(painter, x, y, w, h, "CAR INFO", STREET_CORAL, 22)
+
+        class_label = self.car_class_label or "A"
+        pi_text = str(int(self.pi_value if self.pi_value > 0 else 700))
+        drive_text = self.driveline_label or "RWD"
+        engine_text = self.engine_label or "ENG"
+        year_text = self.car_year or "----"
+        make_text = self.car_make or "Unknown"
+        model_text = self.car_model or "Vehicle"
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        left = x + 14
+        top = y + 24
+        class_w = 38 if len(class_label) == 1 else 48
+        pi_w = 58
+        badge_h = 25
+        pi_x = left + class_w + 4
+
+        class_color = QColor(self.car_class_color)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(class_color.red(), class_color.green(), class_color.blue(), 226))
+        class_rect = QRectF(left, top, class_w, badge_h)
+        painter.drawRoundedRect(class_rect, 4, 4)
+        painter.setFont(QFont("Arial Black", 14 if len(class_label) == 1 else 12))
+        painter.setPen(QColor(250, 246, 236, 250))
+        painter.drawText(class_rect, Qt.AlignmentFlag.AlignCenter, class_label)
+
+        pi_rect = QRectF(pi_x, top, pi_w, badge_h)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(8, 9, 10, 218))
+        painter.drawRoundedRect(pi_rect, 4, 4)
+        painter.setFont(QFont("Arial Black", 14))
+        painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 242))
+        painter.drawText(pi_rect, Qt.AlignmentFlag.AlignCenter, pi_text)
+
+        meta_y = top + badge_h + 8
+        painter.setFont(QFont("Bahnschrift", 11, QFont.Weight.Bold))
+        painter.setPen(QColor(STREET_AMBER.red(), STREET_AMBER.green(), STREET_AMBER.blue(), 232))
+        painter.drawText(QRectF(left, meta_y, 52, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(year_text))
+        painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 224))
+        painter.drawText(QRectF(left + 52, meta_y, w - 74, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(make_text))
+
+        painter.setFont(QFont("Arial Black", 14))
+        painter.setPen(QColor(246, 242, 232, 244))
+        painter.drawText(QRectF(left, meta_y + 18, w - 28, 21), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(model_text))
+        self.draw_marker_line(painter, left + 1, meta_y + 40, x + w - 18, meta_y + 37, STREET_CORAL, 1.2, 64)
+
+        info_y = meta_y + 48
+        col_w = (w - 34) / 2.0
+        for i, (label, value, accent) in enumerate((("DRIVE", drive_text, STREET_CORAL), ("ENGINE", engine_text, STREET_AMBER))):
+            sx = left + i * (col_w + 6)
+            tag_rect = QRectF(sx, info_y, col_w, 24)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(STREET_CHARCOAL.red(), STREET_CHARCOAL.green(), STREET_CHARCOAL.blue(), 34))
+            painter.drawRoundedRect(tag_rect, 4, 4)
+            painter.setFont(QFont("Bahnschrift", 7, QFont.Weight.Bold))
+            painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 132))
+            painter.drawText(QRectF(sx + 6, info_y + 2, col_w - 10, 8), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label)
+            painter.setFont(QFont("Bahnschrift", 10, QFont.Weight.Bold))
+            painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 228))
+            painter.drawText(QRectF(sx + 6, info_y + 10, col_w - 10, 13), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(value))
+        painter.restore()
+
+    def draw_drift_panel_1080(self, painter):
+        x, y, w, h = self.drift_panel_geometry()
+        accent = QColor(STREET_MINT)
+        if self.drift_state == "DRIFT":
+            accent = QColor(STREET_CORAL)
+        elif self.drift_state == "ENTRY":
+            accent = QColor(STREET_AMBER)
+        elif self.drift_state == "RECOVER":
+            accent = QColor(255, 219, 95)
+
+        self.draw_cyber_panel(painter, x, y, w, h, None, accent, 30)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        left = x + 14
+        right = x + w - 14
+        inner_w = right - left
+        value_w = 38
+        bar_w = max(70, inner_w - value_w - 8)
+
+        def mini_bar(bx, by, bw, bh, pct, color):
+            pct = clamp(float(pct), 0.0, 100.0) / 100.0
+            painter.setPen(QPen(QColor(220, 245, 255, 42), 0.8))
+            painter.setBrush(QColor(7, 12, 18, 24))
+            painter.drawRoundedRect(QRectF(bx, by, bw, bh), 3, 3)
+            fw = max(0.0, (bw - 2.0) * pct)
+            if fw > 0.5:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(color.red(), color.green(), color.blue(), 210))
+                painter.drawRoundedRect(QRectF(bx + 1, by + 1, fw, bh - 2), 3, 3)
+
+        self.draw_street_label(painter, left, y + 18, "CAR STATUS", STREET_CORAL, max_w=118, compact=True)
+        painter.setFont(QFont("Arial Black", 19))
+        painter.setPen(accent)
+        painter.drawText(QRectF(left, y + 36, inner_w, 26), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.drift_state)
+        painter.setFont(QFont("Bahnschrift", 8, QFont.Weight.Bold))
+        painter.setPen(QColor(238, 250, 255, 174))
+        painter.drawText(QRectF(left, y + 61, inner_w, 13), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.state_reason)
+
+        # FLOW
+        flow_y = y + 84
+        painter.setFont(QFont("Bahnschrift", 9, QFont.Weight.Bold))
+        painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 220))
+        painter.drawText(QRectF(left, flow_y, 88, 13), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "DRIFT FLOW")
+        flow_col = QColor(STREET_MINT) if self.flow_quality_label in ("SMOOTH", "LOCKED") else QColor(STREET_AMBER)
+        mini_bar(left, flow_y + 17, bar_w, 9, self.flow_pct, flow_col)
+        painter.setFont(QFont("Bahnschrift", 10, QFont.Weight.Bold))
+        painter.setPen(flow_col)
+        painter.drawText(QRectF(left + bar_w + 8, flow_y + 12, value_w, 16), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{round(self.flow_pct):d}%")
+
+        # SLIP
+        slip_y = y + 119
+        painter.setFont(QFont("Bahnschrift", 8, QFont.Weight.Bold))
+        painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 210))
+        painter.drawText(QRectF(left, slip_y, 72, 12), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "REAR SLIP")
+        slip_value_rl = clamp(self.rear_slip_rl / REAR_SLIP_DISPLAY_MAX * 100.0, 0.0, 100.0)
+        slip_value_rr = clamp(self.rear_slip_rr / REAR_SLIP_DISPLAY_MAX * 100.0, 0.0, 100.0)
+        mini_bar(left + 20, slip_y + 15, bar_w - 20, 8, slip_value_rl, QColor(STREET_MINT))
+        mini_bar(left + 20, slip_y + 28, bar_w - 20, 8, slip_value_rr, QColor(STREET_AMBER))
+        painter.setFont(QFont("Bahnschrift", 7, QFont.Weight.Bold))
+        painter.setPen(QColor(232, 248, 255, 160))
+        painter.drawText(QRectF(left, slip_y + 13, 18, 10), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "RL")
+        painter.drawText(QRectF(left, slip_y + 26, 18, 10), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "RR")
+        painter.setFont(QFont("Bahnschrift", 9, QFont.Weight.Bold))
+        painter.setPen(QColor(126, 249, 214, 232))
+        painter.drawText(QRectF(left + bar_w + 8, slip_y + 12, value_w, 12), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{self.rear_slip_rl:.2f}")
+        painter.setPen(QColor(255, 142, 97, 232))
+        painter.drawText(QRectF(left + bar_w + 8, slip_y + 25, value_w, 12), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{self.rear_slip_rr:.2f}")
+
+        # LIMIT - explicitly inside the 1080p frame.
+        limit_y = y + h - 42
+        limit_value = clamp(self.spin_risk, 0.0, 100.0)
+        limit_col = QColor(STREET_MINT)
+        if self.spin_label == "EDGE":
+            limit_col = QColor(STREET_AMBER)
+        elif self.spin_label == "RISK":
+            limit_col = QColor(244, 118, 48)
+        elif self.spin_label == "MAX":
+            limit_col = QColor(255, 219, 95)
+        painter.setFont(QFont("Bahnschrift", 9, QFont.Weight.Bold))
+        painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 220))
+        painter.drawText(QRectF(left, limit_y, 42, 13), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "LIMIT")
+        painter.setFont(QFont("Arial Black", 9))
+        painter.setPen(limit_col)
+        painter.drawText(QRectF(left + 43, limit_y - 1, 54, 14), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.spin_label)
+        mini_bar(left, limit_y + 18, bar_w, 9, limit_value, limit_col)
+        painter.setFont(QFont("Bahnschrift", 10, QFont.Weight.Bold))
+        painter.drawText(QRectF(left + bar_w + 8, limit_y + 14, value_w, 16), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{round(self.spin_risk):d}%")
+        painter.restore()
     def draw_vehicle_info(self, painter):
+        if self._is_1080p_profile():
+            self.draw_vehicle_info_1080(painter)
+            return
         x, y, w, h = self.vehicle_info_geometry()
         self.draw_cyber_panel(painter, x, y, w, h, "CAR INFO", STREET_CORAL, 28)
 
@@ -2814,7 +3002,7 @@ class AngleOverlay(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(pi_rect, 4, 4)
 
-        painter.setFont(QFont("Arial Black", 18))
+        painter.setFont(QFont("Arial Black", self._font_size(18)))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 244))
         painter.drawText(pi_rect.adjusted(0, -1, 0, 1), Qt.AlignmentFlag.AlignCenter, pi_text)
         self.draw_clean_spray(painter, pi_rect.right() + 8, top + 6, STREET_CORAL, 0.52, 18)
@@ -2833,7 +3021,7 @@ class AngleOverlay(QWidget):
                          Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(make_text))
 
         # MODEL: primary readable line, slightly less loud than previous Arial Black block.
-        painter.setFont(QFont("Arial Black", 20))
+        painter.setFont(QFont("Arial Black", self._font_size(20)))
         painter.setPen(QColor(246, 242, 232, 245))
         model_rect = QRectF(left, meta_y + 25, w - 34, 27)
         painter.drawText(model_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(model_text))
@@ -2855,11 +3043,11 @@ class AngleOverlay(QWidget):
             self.draw_marker_line(painter, sx + 2, info_y + 3, sx + min(col_w - 6, 62), info_y + 1,
                                   accent, 1.4, 58)
 
-            painter.setFont(QFont("Bahnschrift", 8, QFont.Weight.Bold))
+            painter.setFont(QFont("Bahnschrift", self._font_size(8), QFont.Weight.Bold))
             painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 132))
             painter.drawText(QRectF(sx + 7, info_y + 3, col_w - 12, 10),
                              Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label)
-            painter.setFont(QFont("Bahnschrift", 15, QFont.Weight.Bold))
+            painter.setFont(QFont("Bahnschrift", self._font_size(15), QFont.Weight.Bold))
             painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 228))
             painter.drawText(QRectF(sx + 7, info_y + 13, col_w - 12, 17),
                              Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(value))
@@ -2881,14 +3069,19 @@ class AngleOverlay(QWidget):
         self.draw_street_label(painter, x + 2, y - 8, "INPUT", STREET_CORAL, max_w=86, compact=True)
         self.draw_halftone_dots(painter, x + w - 30, y + 4, STREET_CORAL, rows=2, cols=4, spacing=4.2, radius=0.75, alpha=16)
         self.draw_graffiti_arrow(painter, x + 58, y + 10, x + 74, y + 7, STREET_CORAL, 1.2, 42)
-        self.draw_graffiti_cross(painter, x + w - 10, y + 126, STREET_CORAL, 0.58, 34)
+        self.draw_graffiti_cross(painter, x + w - 10, y + (90 if self._is_1080p_profile() else 126), STREET_CORAL, 0.48 if self._is_1080p_profile() else 0.58, 34)
 
-        bar_w = 13
-        bar_h = 112
-        gap = 6
+        if self._is_1080p_profile():
+            bar_w = 9
+            bar_h = 76
+            gap = 5
+        else:
+            bar_w = 13
+            bar_h = 112
+            gap = 6
         total_w = len(rows) * bar_w + (len(rows) - 1) * gap
         start_x = x + (w - total_w) * 0.5
-        bar_y = y + 18
+        bar_y = y + (16 if self._is_1080p_profile() else 18)
 
         for i, (letter, value, color) in enumerate(rows):
             bx = start_x + i * (bar_w + gap)
@@ -3012,12 +3205,12 @@ class AngleOverlay(QWidget):
 
         self.draw_marker_line(painter, x + 6, y + 6, x + 68, y + 4, STREET_AMBER, 2.0, 72)
 
-        painter.setFont(QFont("Bahnschrift", 11, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(11), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 252))
         painter.drawText(QRectF(label_x, row1_y - 6, 74, 22), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "WHEEL")
         painter.drawText(QRectF(label_x, row2_y - 6, 82, 22), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "COUNTER")
 
-        painter.setFont(QFont("Bahnschrift", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 152))
         painter.drawText(QRectF(bar_x - 22, row1_y - 1, 18, 14), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "L")
         painter.drawText(QRectF(bar_x + bar_w + 2, row1_y - 1, 18, 14), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "R")
@@ -3031,12 +3224,12 @@ class AngleOverlay(QWidget):
         painter.setPen(QPen(QColor(255, 255, 255, 118), 1.25, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawLine(QPointF(zero_x, row1_y - 8), QPointF(zero_x, row1_y + 8))
         painter.drawLine(QPointF(zero_x, row2_y - 8), QPointF(zero_x, row2_y + 8))
-        painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
+        painter.setFont(QFont("Consolas", self._font_size(7), QFont.Weight.Bold))
         painter.setPen(QColor(255, 255, 255, 154))
         painter.drawText(QRectF(zero_x - 10, row1_y + 8, 20, 10), Qt.AlignmentFlag.AlignCenter, "0")
         self.draw_clean_spray(painter, bar_x + bar_w + 10, row2_y + 5, STREET_MINT, 0.54, 16)
 
-        painter.setFont(QFont("Bahnschrift", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 196))
         painter.drawText(QRectF(bar_x + bar_w - 40, row2_y + 13, 40, 13), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{round(self.counter_pct):d}%")
 
@@ -3226,19 +3419,19 @@ class AngleOverlay(QWidget):
         label_x = x + w - 122
         g_total = math.hypot(self.g_lat_display, self.g_long_display)
 
-        painter.setFont(QFont("Bahnschrift", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(246, 250, 255, 148))
         painter.drawText(QRectF(label_x, y + 38, 104, 14), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "TOTAL G")
-        painter.setFont(QFont("Arial Black", 17))
+        painter.setFont(QFont("Arial Black", self._font_size(17)))
         painter.setPen(QColor(255, 255, 255, 248))
         painter.drawText(QRectF(label_x, y + 51, 98, 26), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"{g_total:.2f}")
 
         # LAT/LONG numeric rows.
-        painter.setFont(QFont("Bahnschrift", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 112))
         painter.drawText(QRectF(label_x, y + 82, 44, 14), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "LAT")
         painter.drawText(QRectF(label_x, y + 101, 44, 14), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "LONG")
-        painter.setFont(QFont("Bahnschrift", 11, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(11), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_MINT.red(), STREET_MINT.green(), STREET_MINT.blue(), 192))
         painter.drawText(QRectF(label_x + 45, y + 79, 62, 18), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{self.g_lat_display:+.2f}")
         painter.setPen(QColor(STREET_AMBER.red(), STREET_AMBER.green(), STREET_AMBER.blue(), 188))
@@ -3248,24 +3441,24 @@ class AngleOverlay(QWidget):
         load_col = QColor(STREET_MINT) if load_side != "CENTER" else QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 184)
         drive_col = QColor(STREET_AMBER) if drive_state != "NEUTRAL" else QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 132)
 
-        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Consolas", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 158))
         painter.drawText(QRectF(label_x, y + 123, 42, 13), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "LOAD")
-        painter.setFont(QFont("Arial Black", 10))
+        painter.setFont(QFont("Arial Black", self._font_size(10)))
         painter.setPen(load_col)
         self.draw_sticker_slash(painter, label_x + 38, y + 120, 80, 17, load_col, 10)
         painter.drawText(QRectF(label_x + 42, y + 119, 82, 19), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, load_side)
 
-        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Consolas", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 148))
         painter.drawText(QRectF(label_x, y + 142, 42, 13), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "MODE")
-        painter.setFont(QFont("Arial Black", 10))
+        painter.setFont(QFont("Arial Black", self._font_size(10)))
         painter.setPen(drive_col)
         self.draw_sticker_slash(painter, label_x + 38, y + 139, 80, 17, drive_col, 9)
         painter.drawText(QRectF(label_x + 42, y + 138, 82, 19), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, drive_state)
 
         # Tiny axis labels around the ball.
-        painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
+        painter.setFont(QFont("Consolas", self._font_size(7), QFont.Weight.Bold))
         painter.setPen(QColor(240, 245, 255, 82))
         painter.drawText(QRectF(cx - radius - 18, cy + radius + 6, 36, 12), Qt.AlignmentFlag.AlignCenter, "LAT")
         painter.drawText(QRectF(cx + radius - 18, cy + radius + 6, 36, 12), Qt.AlignmentFlag.AlignCenter, "LAT")
@@ -3279,7 +3472,7 @@ class AngleOverlay(QWidget):
         self.draw_halftone_dots(painter, x + w - 58, y + 28, STREET_CORAL, rows=4, cols=5, spacing=4.0, radius=0.86, alpha=20)
         self.draw_marker_line(painter, x + 20, y + h - 22, x + 92, y + h - 24, STREET_CORAL, 2.1, 68)
 
-        painter.setFont(QFont("Bahnschrift", 10, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(10), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 150))
         painter.drawText(QRectF(x + w - 120, y + 8, 100, 22), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{len(self.live_map_points)} PTS")
 
@@ -3301,7 +3494,7 @@ class AngleOverlay(QWidget):
         painter.drawRoundedRect(QRectF(map_x, map_y, map_w, map_h), 8, 8)
 
         if not self.live_map_points:
-            painter.setFont(QFont("Bahnschrift", 11, QFont.Weight.Bold))
+            painter.setFont(QFont("Bahnschrift", self._font_size(11), QFont.Weight.Bold))
             painter.setPen(QColor(220, 245, 255, 95))
             painter.drawText(QRectF(map_x, map_y, map_w, map_h), Qt.AlignmentFlag.AlignCenter, "LEARNING")
         else:
@@ -3367,7 +3560,7 @@ class AngleOverlay(QWidget):
                     prev_recent = rq
 
         fy = y + h - 30
-        painter.setFont(QFont("Bahnschrift", 9, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(9), QFont.Weight.Bold))
         painter.setPen(QColor(200, 240, 255, 170))
         painter.drawText(QRectF(x + 20, fy, 48, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "YOU")
         painter.setPen(QPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 112), 3))
@@ -3382,6 +3575,9 @@ class AngleOverlay(QWidget):
         self.draw_graffiti_cross(painter, x + 18, y + 24, STREET_MINT, 0.56, 28)
 
     def draw_drift_panel(self, painter):
+        if self._is_1080p_profile():
+            self.draw_drift_panel_1080(painter)
+            return
         x, y, w, h = self.drift_panel_geometry()
         self.draw_cyber_panel(painter, x, y, w, h, None, STREET_CORAL, 62)
 
@@ -3440,7 +3636,7 @@ class AngleOverlay(QWidget):
 
         self.draw_street_label(painter, left, state_label_y - 2, "CAR STATUS", STREET_CORAL, max_w=150, compact=True)
 
-        painter.setFont(QFont("Arial Black", 26))
+        painter.setFont(QFont("Arial Black", self._font_size(26)))
         # Clean paint-word treatment: readable, but not a huge dirty poster word.
         self.draw_sticker_slash(painter, left - 8, state_value_y + 0, 188, 32, accent, 58)
         glow = QColor(accent); glow.setAlpha(96)
@@ -3454,7 +3650,7 @@ class AngleOverlay(QWidget):
         self.draw_graffiti_cross(painter, left + 174, state_value_y + 9, accent, 0.86, 82)
         self.draw_halftone_dots(painter, right - 48, state_label_y + 4, STREET_CORAL, rows=3, cols=4, spacing=4.2, radius=0.95, alpha=24)
 
-        painter.setFont(QFont("Bahnschrift", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(238, 250, 255, 178))
         painter.drawText(QRectF(left, state_reason_y, inner_w, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.state_reason)
 
@@ -3462,7 +3658,7 @@ class AngleOverlay(QWidget):
         painter.drawLine(QPointF(left, sep1_y), QPointF(right, sep1_y))
 
         # DRIFT FLOW gauge
-        painter.setFont(QFont("Bahnschrift", 11, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(11), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 224))
         painter.drawText(QRectF(left, flow_label_y, 118, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "DRIFT FLOW")
         quality_col = QColor(STREET_MINT) if self.flow_quality_label in ("SMOOTH", "LOCKED") else QColor(STREET_OFFWHITE)
@@ -3479,7 +3675,7 @@ class AngleOverlay(QWidget):
         flow_col = QColor(STREET_MINT) if self.flow_quality_label in ("SMOOTH", "LOCKED") else QColor(STREET_AMBER)
         metric_bar(flow_bar_x, flow_bar_y, bar_w, flow_bar_h, self.flow_pct, flow_col, 100.0)
         self.draw_graffiti_arrow(painter, flow_bar_x + bar_w - 8, flow_bar_y - 4, flow_bar_x + bar_w + 10, flow_bar_y - 6, flow_col, 1.2, 44)
-        painter.setFont(QFont("Bahnschrift", 13, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(13), QFont.Weight.Bold))
         painter.setPen(flow_col)
         painter.drawText(QRectF(flow_bar_x + bar_w + 10, flow_bar_y - 3, value_w, 20), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{round(self.flow_pct):d}%")
 
@@ -3487,7 +3683,7 @@ class AngleOverlay(QWidget):
         painter.drawLine(QPointF(left + 6, sep2_y), QPointF(right - 6, sep2_y))
 
         # REAR SLIP gauges (left / right rear tires)
-        painter.setFont(QFont("Bahnschrift", 10, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(10), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 212))
         painter.drawText(QRectF(left, slip_label_y, 132, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "REAR SLIP")
         slip_bar_x = left + 28
@@ -3498,13 +3694,13 @@ class AngleOverlay(QWidget):
         slip_row2_y = slip_bar_y + 16
         lr_label_w = 24
         rear_bar_w = max(40.0, bar_w - 28)
-        painter.setFont(QFont("Bahnschrift", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(232, 248, 255, 164))
         painter.drawText(QRectF(left, slip_row1_y - 1, lr_label_w, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "RL")
         painter.drawText(QRectF(left, slip_row2_y - 1, lr_label_w, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "RR")
         metric_bar(slip_bar_x, slip_row1_y, rear_bar_w, slip_bar_h, slip_value_rl, QColor(STREET_MINT), 100.0)
         metric_bar(slip_bar_x, slip_row2_y, rear_bar_w, slip_bar_h, slip_value_rr, QColor(STREET_AMBER), 100.0)
-        painter.setFont(QFont("Bahnschrift", 12, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(12), QFont.Weight.Bold))
         painter.setPen(QColor(126, 249, 214, 236))
         painter.drawText(QRectF(slip_bar_x + rear_bar_w + 10, slip_row1_y - 2, value_w, 16), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{self.rear_slip_rl:.2f}")
         painter.setPen(QColor(255, 142, 97, 236))
@@ -3522,7 +3718,7 @@ class AngleOverlay(QWidget):
             limit_col = QColor(244, 118, 48)
         elif self.spin_label == "MAX":
             limit_col = QColor(255, 219, 95)
-        painter.setFont(QFont("Bahnschrift", 12, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(12), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 220))
         painter.drawText(QRectF(left, limit_label_y, 54, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "LIMIT")
         self.draw_sticker_slash(painter, left + 50, limit_label_y + 2, 70, 15, limit_col, 14)
@@ -3532,7 +3728,7 @@ class AngleOverlay(QWidget):
         else:
             state_col.setAlpha(226)
         self.draw_marker_line(painter, left + 1, limit_label_y + 18, left + 96, limit_label_y + 15, limit_col, 2.2, 102)
-        painter.setFont(QFont("Arial Black", 12))
+        painter.setFont(QFont("Arial Black", self._font_size(12)))
         painter.setPen(state_col)
         painter.drawText(QRectF(left + 55, limit_label_y - 1, 76, 19), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.spin_label)
         if self.spin_label != "SAFE":
@@ -3542,7 +3738,7 @@ class AngleOverlay(QWidget):
         metric_bar(limit_bar_x, limit_bar_y, bar_w, limit_bar_h, limit_value, limit_col, 100.0)
         self.draw_graffiti_arrow(painter, limit_bar_x + bar_w - 6, limit_bar_y + 15, limit_bar_x + bar_w + 10, limit_bar_y + 12, limit_col, 1.25, 52)
         self.draw_graffiti_cross(painter, limit_bar_x - 10, limit_bar_y + 6, limit_col, 0.64, 46)
-        painter.setFont(QFont("Bahnschrift", 15, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(15), QFont.Weight.Bold))
         painter.setPen(limit_col)
         painter.drawText(QRectF(limit_bar_x + bar_w + 10, limit_bar_y - 5, value_w, 22), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{round(self.spin_risk):d}%")
 
@@ -3564,7 +3760,7 @@ class AngleOverlay(QWidget):
             style_color = QColor(STREET_MINT)
 
         # Main style tag.
-        painter.setFont(QFont("Arial Black", 18))
+        painter.setFont(QFont("Arial Black", self._font_size(18)))
         shadow = QColor(0, 0, 0, 112)
         self.draw_sticker_slash(painter, x + 20, y + 47, 126, 18, style_color, 17)
         self.draw_halftone_dots(painter, x + 146, y + 48, style_color, rows=2, cols=4, spacing=4.0, radius=0.78, alpha=16)
@@ -3583,7 +3779,7 @@ class AngleOverlay(QWidget):
         style_score = clamp((line_score + rhythm_score + commit_score) / 3.0, 0.0, 100.0)
         stars = 1 + int(clamp(style_score / 25, 0, 4))
 
-        painter.setFont(QFont("Arial Black", 15))
+        painter.setFont(QFont("Arial Black", self._font_size(15)))
         for i in range(5):
             painter.setPen(QColor(STREET_AMBER.red(), STREET_AMBER.green(), STREET_AMBER.blue(), 205 if i < stars else 54))
             painter.drawText(QRectF(x + 176 + i * 22, y + 47, 20, 24), Qt.AlignmentFlag.AlignCenter, "★")
@@ -3600,16 +3796,16 @@ class AngleOverlay(QWidget):
         else:
             run_tag = "BUILD UP"
 
-        painter.setFont(QFont("Bahnschrift", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 118))
         painter.drawText(QRectF(x + 24, y + 82, 86, 14), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "RUN TYPE")
-        painter.setFont(QFont("Bahnschrift", 11, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(11), QFont.Weight.Bold))
         painter.setPen(style_color)
         painter.drawText(QRectF(x + 106, y + 79, 210, 20), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, run_tag)
 
         def eval_row(label, value, yy, color):
             label_col = QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 156)
-            painter.setFont(QFont("Bahnschrift", 9, QFont.Weight.Bold))
+            painter.setFont(QFont("Bahnschrift", self._font_size(9), QFont.Weight.Bold))
             painter.setPen(label_col)
             painter.drawText(QRectF(x + 24, yy - 2, 70, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label)
 
@@ -3629,7 +3825,7 @@ class AngleOverlay(QWidget):
                 painter.setBrush(c)
                 painter.drawRoundedRect(QRectF(bx + 2, yy + 5, fill_w, max(1.0, bh - 2)), 2.2, 2.2)
 
-            painter.setFont(QFont("Bahnschrift", 11, QFont.Weight.Bold))
+            painter.setFont(QFont("Bahnschrift", self._font_size(11), QFont.Weight.Bold))
             value_col = QColor(color); value_col.setAlpha(218)
             painter.setPen(value_col)
             painter.drawText(QRectF(x + 246, yy - 3, 66, 20), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{round(value):02d}")
@@ -3639,7 +3835,7 @@ class AngleOverlay(QWidget):
         eval_row("COMMIT", commit_score, y + 151, style_color)
 
         # Small footer note to make the panel's role obvious.
-        painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
+        painter.setFont(QFont("Consolas", self._font_size(7), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 88))
         painter.drawText(QRectF(x + 24, y + h - 18, w - 48, 12), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "RUN STYLE / NOT TELEMETRY")
     def popup_drag_hint_visible(self):
@@ -3704,7 +3900,7 @@ class AngleOverlay(QWidget):
         painter.setPen(pen)
         painter.drawRoundedRect(QRectF(x + 4, y + 4, w - 8, h - 8), 10, 10)
 
-        painter.setFont(QFont("Arial Black", 10))
+        painter.setFont(QFont("Arial Black", self._font_size(10)))
         painter.setPen(hint_color)
         painter.drawText(QRectF(x, y + h * 0.5 - 12, w, 24), Qt.AlignmentFlag.AlignCenter, label)
         painter.restore()
@@ -3767,7 +3963,7 @@ class AngleOverlay(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(chip, 6, 6)
 
-        painter.setFont(QFont("Consolas", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Consolas", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(241, 247, 252, 230))
         painter.drawText(chip, Qt.AlignmentFlag.AlignCenter, label)
 
@@ -3850,12 +4046,12 @@ class AngleOverlay(QWidget):
         if hero_popup:
             font_short = int(self.hud_config.get("popup_hero_font_size", 34))
             font_long = int(self.hud_config.get("popup_hero_font_size_long", 30))
-            painter.setFont(QFont("Arial Black", font_short if len(visible_text) <= 11 else font_long))
+            painter.setFont(QFont("Arial Black", self._font_size(font_short if len(visible_text) <= 11 else font_long)))
             text_rect = QRectF(shell_rect.left() + 16, shell_rect.top() + 18, shell_rect.width() - 32, shell_rect.height() - 22)
         else:
             font_short = int(self.hud_config.get("popup_normal_font_size", 25))
             font_long = int(self.hud_config.get("popup_normal_font_size_long", 21))
-            painter.setFont(QFont("Arial Black", font_short if len(visible_text) <= 12 else font_long))
+            painter.setFont(QFont("Arial Black", self._font_size(font_short if len(visible_text) <= 12 else font_long)))
             text_rect = QRectF(shell_rect.left() + 14, shell_rect.top() + 15, shell_rect.width() - 28, shell_rect.height() - 18)
 
         self.draw_popup_text_layers(painter, text_rect, visible_text, accent, hero_popup)
@@ -3905,7 +4101,7 @@ class AngleOverlay(QWidget):
         painter.drawEllipse(QPointF(shell_rect.left() + 28, mid_y), 6.0, 6.0)
         painter.drawEllipse(QPointF(shell_rect.right() - 28, mid_y), 6.0, 6.0)
 
-        painter.setFont(QFont("Arial Black", 28 if len(visible_text) <= 12 else 24))
+        painter.setFont(QFont("Arial Black", self._font_size(28 if len(visible_text) <= 12 else 24)))
         text_rect = QRectF(shell_rect.left() + 18, shell_rect.top() + 10, shell_rect.width() - 36, shell_rect.height() - 12)
         self.draw_popup_text_layers(painter, text_rect, visible_text, accent, hero=True)
 
@@ -3918,12 +4114,12 @@ class AngleOverlay(QWidget):
 
         center_tick = self.curve_point(0.0, layout)
         # LIVE95: keep LOW / GOD / CAT at the LIVE94 height even though the gauge moved up.
-        rate_y = min(center_tick.y() + 72, self.height() - 66)
-        rate_rect = QRectF(layout.cx - 126, rate_y, 252, 58)
+        rate_y = min(center_tick.y() + self._s(72), self.height() - self._s(66))
+        rate_rect = QRectF(layout.cx - self._s(126), rate_y, self._s(252), self._s(58))
         if abs_angle > 60:
             word = self.god_word
             font_size = 34 if word == "GOD" else 34
-            painter.setFont(QFont("Arial Black", int(font_size * 1.2), QFont.Weight.Black))
+            painter.setFont(QFont("Arial Black", self._font_size(font_size * 1.2), QFont.Weight.Black))
 
             core = QColor(255, 226, 78)
             outer = QColor(255, 166, 28)
@@ -3947,7 +4143,7 @@ class AngleOverlay(QWidget):
             self.draw_graffiti_arrow(painter, rate_rect.x() + 46, rate_rect.y() + 42, rate_rect.x() + 70, rate_rect.y() + 38, outer, 1.6, 64)
             self.draw_graffiti_cross(painter, rate_rect.x() + 190, rate_rect.y() + 22, core, 0.76, 54)
         else:
-            painter.setFont(QFont("Bahnschrift", 29, QFont.Weight.Black))
+            painter.setFont(QFont("Bahnschrift", self._font_size(29), QFont.Weight.Black))
             # LIVE109: clean sticker-like splash behind the rating word.
             self.draw_sticker_slash(painter, rate_rect.x() + 42, rate_rect.y() + 18, 168, 26, color, 30)
             outer_glow = QColor(color)
@@ -3967,7 +4163,7 @@ class AngleOverlay(QWidget):
             self.draw_halftone_dots(painter, rate_rect.x() + 176, rate_rect.y() + 15, color, rows=3, cols=4, spacing=4.0, radius=0.82, alpha=22)
 
 
-        painter.setFont(QFont("Bahnschrift", 11, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(11), QFont.Weight.Bold))
         left_color = QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 210)
         right_color = QColor(STREET_CORAL.red(), STREET_CORAL.green(), STREET_CORAL.blue(), 220)
         lp = self.curve_point(-50.0 / 60.0, layout)
@@ -3978,16 +4174,16 @@ class AngleOverlay(QWidget):
         painter.drawText(QRectF(rp.x() - 52, rp.y() - 49, 104, 20), Qt.AlignmentFlag.AlignCenter, "RIGHT")
 
         angle_anchor = self.curve_point(0.88, layout)
-        angle_font = QFont("Arial Black", 58)
+        angle_font = QFont("Arial Black", self._font_size(58))
         painter.setFont(angle_font)
         angle_text = f"{int(round(self.display_angle)):+d}°" if abs(self.display_angle) >= 0.5 else "0°"
-        angle_y = min(angle_anchor.y() + 56, self.height() - 66)
-        angle_rect = QRectF(angle_anchor.x() - 14, angle_y, 222, 66)
+        angle_y = min(angle_anchor.y() + self._s(56), self.height() - self._s(66))
+        angle_rect = QRectF(angle_anchor.x() - self._s(14), angle_y, self._s(222), self._s(66))
         angle_core = QColor(255, 255, 255, 255)
         angle_accent = QColor(255, 112, 142, 255)
 
         # Compact contrast plate so the number reads better against gameplay.
-        plate_rect = QRectF(angle_rect.right() - 168, angle_rect.y() + 8, 164, 44)
+        plate_rect = QRectF(angle_rect.right() - self._s(168), angle_rect.y() + self._s(8), self._s(164), self._s(44))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(0, 0, 0, 118))
         painter.drawRoundedRect(plate_rect.translated(0, 1), 9, 9)
@@ -4019,17 +4215,17 @@ class AngleOverlay(QWidget):
 
         hold_anchor = self.curve_point(-0.96, layout)
         hold_color = hold_color_for_seconds(self.hold_seconds)
-        hold_label_y = min(hold_anchor.y() + 52, self.height() - 92)
-        hold_value_y = min(hold_anchor.y() + 74, self.height() - 68)
-        hold_meter_y = min(hold_anchor.y() + 121, self.height() - 24)
+        hold_label_y = min(hold_anchor.y() + self._s(52), self.height() - self._s(92))
+        hold_value_y = min(hold_anchor.y() + self._s(74), self.height() - self._s(68))
+        hold_meter_y = min(hold_anchor.y() + self._s(121), self.height() - self._s(24))
 
-        painter.setFont(QFont("Bahnschrift", 12, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(12), QFont.Weight.Bold))
         painter.setPen(QColor(235, 246, 255, 178))
         painter.drawText(QRectF(hold_anchor.x() - 42, hold_label_y, 82, 20), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "HOLD")
         self.draw_marker_line(painter, hold_anchor.x() - 43, hold_label_y + 20, hold_anchor.x() + 5, hold_label_y + 18, hold_color, 1.9, 84)
         self.draw_halftone_dots(painter, hold_anchor.x() + 8, hold_label_y + 8, hold_color, rows=2, cols=3, spacing=3.8, radius=0.76, alpha=18)
 
-        painter.setFont(QFont("Arial Black", 38))
+        painter.setFont(QFont("Arial Black", self._font_size(38)))
         painter.setPen(QColor(0, 0, 0, 110))
         painter.drawText(QRectF(hold_anchor.x() - 30, hold_value_y, 156, 46).translated(1, 2), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"{self.hold_seconds:.1f}s")
         value_col = QColor(hold_color)
@@ -4037,7 +4233,7 @@ class AngleOverlay(QWidget):
         painter.setPen(value_col)
         painter.drawText(QRectF(hold_anchor.x() - 30, hold_value_y, 156, 46), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"{self.hold_seconds:.1f}s")
 
-        self.draw_hold_meter(painter, hold_anchor.x() - 36, hold_meter_y, 128, 10, self.hold_seconds, compact=False)
+        self.draw_hold_meter(painter, hold_anchor.x() - self._s(36), hold_meter_y, self._s(128), self._s(10), self.hold_seconds, compact=self._is_1080p_profile())
 
         connected = self.last_packet_ms < 500 and self.packet_count > 0
         if self.udp_error:
@@ -4050,9 +4246,9 @@ class AngleOverlay(QWidget):
             status = "WAITING FH6 DATA  |  SPACE DEMO"
             pen_color = QColor(130, 245, 255, 58)
 
-        painter.setFont(QFont("Bahnschrift", 8, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(pen_color)
-        painter.drawText(QRectF(layout.cx - 260, layout.cy + 138, 520, 18), Qt.AlignmentFlag.AlignCenter, status)
+        painter.drawText(QRectF(layout.cx - self._s(260), layout.cy + self._s(138), self._s(520), self._s(18)), Qt.AlignmentFlag.AlignCenter, status)
     def _splash_elapsed(self):
         return max(0.0, time.monotonic() - getattr(self, "splash_start_time", time.monotonic()))
 
@@ -4114,7 +4310,7 @@ class AngleOverlay(QWidget):
         if cursor_on:
             typed_logo += "_"
 
-        painter.setFont(QFont("Arial Black", 15))
+        painter.setFont(QFont("Arial Black", self._font_size(15)))
         fm = QFontMetrics(painter.font())
         logo_rect = QRectF(0, cy - 48, W, 24)
         glow_alpha = int(28 * clamp((elapsed - 0.85) / 1.30, 0.0, 1.0))
@@ -4127,7 +4323,7 @@ class AngleOverlay(QWidget):
         # DRIFT DATA SYSTEM reveal with bracket lines.
         system_alpha = int(218 * clamp((elapsed - 3.65) / 1.00, 0.0, 1.0))
         sys_prog = self._splash_ease((elapsed - 3.65) / 1.00)
-        painter.setFont(QFont("Bahnschrift", 12, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(12), QFont.Weight.Bold))
         sys_rect = QRectF(0, cy - 4, W, 24)
         painter.setPen(QColor(220, 236, 246, system_alpha))
         painter.drawText(sys_rect, Qt.AlignmentFlag.AlignCenter, "DRIFT DATA SYSTEM")
@@ -4142,7 +4338,7 @@ class AngleOverlay(QWidget):
 
         # Tagline fade + orange edge slash.
         tag_alpha = int(206 * clamp((elapsed - 4.35) / 0.75, 0.0, 1.0))
-        painter.setFont(QFont("Bahnschrift", 12, QFont.Weight.Bold))
+        painter.setFont(QFont("Bahnschrift", self._font_size(12), QFont.Weight.Bold))
         tag_rect = QRectF(0, cy + 34, W, 22)
         painter.setPen(QColor(255, 232, 205, tag_alpha))
         painter.drawText(tag_rect, Qt.AlignmentFlag.AlignCenter, "TUNED FOR THE EDGE")
@@ -4151,7 +4347,7 @@ class AngleOverlay(QWidget):
 
         # Boot log appears last, compact and technical.
         log_alpha = int(120 * clamp((elapsed - 4.90) / 0.70, 0.0, 1.0))
-        painter.setFont(QFont("Consolas", 7, QFont.Weight.Bold))
+        painter.setFont(QFont("Consolas", self._font_size(7), QFont.Weight.Bold))
         log_x = cx - 94
         log_y = cy + 86
         simhub_state = "OFF"
