@@ -1,0 +1,79 @@
+name: Build Windows Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "public-test-*"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Build exe
+        run: |
+          python -m PyInstaller --noconfirm --clean --windowed --name "093_Drift_HUD" `
+            --add-data "hud_config.json;." `
+            --add-data "hud_profile.json;." `
+            --add-data "overlay_layout.json;." `
+            --add-data "simhub_forward.json;." `
+            --add-data "cars.json;." `
+            main.py
+
+      - name: Create public release folder
+        shell: pwsh
+        run: |
+          $releaseRoot = "PUBLIC_RELEASE"
+          $releaseName = "093_Drift_HUD_Public_Test_01"
+          $releaseDir = Join-Path $releaseRoot $releaseName
+
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+          Copy-Item -Path "dist\093_Drift_HUD\*" -Destination $releaseDir -Recurse -Force
+
+          @"
+          @echo off
+          cd /d "%~dp0"
+          start "" "093_Drift_HUD.exe"
+          "@ | Set-Content -Path (Join-Path $releaseDir "START_093_DRIFT_HUD.bat") -Encoding ASCII
+
+          @"
+          093 Drift HUD - Public Test 01
+
+          Start:
+          Double-click START_093_DRIFT_HUD.bat
+
+          FH6 Data Out:
+          127.0.0.1:5300
+
+          SimHub passthrough:
+          127.0.0.1:8001
+
+          Keep this whole folder together.
+          Do not move only the exe.
+          "@ | Set-Content -Path (Join-Path $releaseDir "README_PUBLIC_TEST_01.txt") -Encoding UTF8
+
+      - name: Zip public release
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "PUBLIC_RELEASE\093_Drift_HUD_Public_Test_01" -DestinationPath "093_Drift_HUD_Public_Test_01_WINDOWS.zip" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 093_Drift_HUD_Public_Test_01_WINDOWS
+          path: 093_Drift_HUD_Public_Test_01_WINDOWS.zip
