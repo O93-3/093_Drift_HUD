@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import math
 import re
 import socket
@@ -1241,10 +1242,64 @@ class AngleOverlay(QWidget):
         return down and not was_down
 
     def _exit_hud(self):
+        self._shutdown_resources()
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
         self.close()
+        # Public release safety: if a native handle or Qt tool-window keeps the
+        # app alive in the background, force the process down after cleanup.
+        QTimer.singleShot(120, lambda: os._exit(0))
+
+    def _shutdown_resources(self):
+        for attr in ("hotkey_timer", "timer"):
+            obj = getattr(self, attr, None)
+            try:
+                if obj is not None:
+                    obj.stop()
+            except Exception:
+                pass
+
+        for attr in ("sock", "simhub_forward_socket"):
+            obj = getattr(self, attr, None)
+            try:
+                if obj is not None:
+                    obj.close()
+            except Exception:
+                pass
+            try:
+                setattr(self, attr, None)
+            except Exception:
+                pass
+
+    def closeEvent(self, event):
+        self._shutdown_resources()
+        app = QApplication.instance()
+        if app is not None:
+            QTimer.singleShot(0, app.quit)
+        try:
+            event.accept()
+        except Exception:
+            pass
 
     def _hud_profile_config_path(self):
         return Path(__file__).resolve().parent / HUD_PROFILE_FILE
+
+    def _screen_height_for_profile_safety(self):
+        try:
+            screen = QGuiApplication.primaryScreen()
+            if not screen:
+                return 0
+            return int(screen.availableGeometry().height())
+        except Exception:
+            return 0
+
+    def _use_1080p_safe_startup_profile(self):
+        # Public release safety: 1440p layouts can push panels toward the edge on
+        # 1080p displays. On low-height screens, start in the dedicated 1080P STREAM
+        # profile so users can see the HUD and still switch profiles with Ctrl+F9.
+        h = self._screen_height_for_profile_safety()
+        return 0 < h < 1200
 
     def _load_hud_profile_config(self):
         path = self._hud_profile_config_path()
@@ -1256,6 +1311,11 @@ class AngleOverlay(QWidget):
                     self.hud_profile = profile
         except Exception as e:
             print(f"HUD PROFILE CONFIG ERROR: {e}")
+
+        if self._use_1080p_safe_startup_profile() and not str(self.hud_profile).startswith("1080P"):
+            self.hud_profile = "1080P STREAM"
+            print("Screen safety: low-height display detected; starting in 1080P STREAM profile.")
+
         self._apply_hud_profile(show_notice=False, save=False)
 
     def _save_hud_profile_config(self):
@@ -4245,6 +4305,7 @@ class AngleOverlay(QWidget):
 
 def main():
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(True)
     win = AngleOverlay()
     win.show()
     return app.exec()

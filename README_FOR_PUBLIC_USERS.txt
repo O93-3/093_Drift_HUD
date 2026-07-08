@@ -27,3 +27,18 @@ Exit HUD:
 ```text
 Ctrl + Shift + Q
 ```
+
+
+1080p safety:
+- On displays lower than 1200px high, the HUD now starts in 1080P STREAM automatically.
+- 1440p users still start with the normal 1440P STREAM layout.
+- Users can still switch profiles with Ctrl + F9.
+
+
+LIVE191 1080p compact fix:
+- 1080P STREAM / 1080P FULL now use smaller dedicated panel geometry and compact font scaling.
+- Low-height screens still auto-start in 1080P STREAM.
+
+
+LIVE192 force-exit cleanup:
+- Ctrl + Shift + Q now stops HUD timers, closes UDP sockets, quits the Qt app, and force-exits if Windows leaves the overlay in background processes.
