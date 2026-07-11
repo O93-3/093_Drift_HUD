@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
         run: |
           $releaseRoot = "PUBLIC_RELEASE"
-          $releaseName = "093_Drift_HUD_Public_Test_01"
+          $releaseName = "093_Drift_HUD_Public_Test_02"
           $releaseDir = Join-Path $releaseRoot $releaseName
 
           New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
@@ -53,7 +53,7 @@ jobs:
           Set-Content -Path (Join-Path $releaseDir "START_093_DRIFT_HUD.bat") -Value $startBat -Encoding ASCII
 
           $readme = @(
-            '093 Drift HUD - Public Test 01',
+            '093 Drift HUD - Public Test 02',
             '',
             'Start:',
             'Double-click START_093_DRIFT_HUD.bat',
@@ -73,17 +73,22 @@ jobs:
             '1080p displays automatically start in the dedicated 1080P STREAM layout.',
             '',
             'Keep this whole folder together.',
+            '',
+            'Public Test 02 visual update:',
+            'Operation popups: HANDBRAKE / CLUTCH / BRAKE only.',
+            'G TELEMETRY, CAR STATUS, CAR INFO, INPUT, TRACK MAP, WHEEL / COUNTER texture updates are included.',
+            'ANGLE is kept clean: no noisy backglow or scan rail.',
             'Do not move only the exe.'
           )
-          Set-Content -Path (Join-Path $releaseDir "README_PUBLIC_TEST_01.txt") -Value $readme -Encoding UTF8
+          Set-Content -Path (Join-Path $releaseDir "README_PUBLIC_TEST_02.txt") -Value $readme -Encoding UTF8
 
       - name: Zip public release
         shell: pwsh
         run: |
-          Compress-Archive -Path "PUBLIC_RELEASE\093_Drift_HUD_Public_Test_01" -DestinationPath "093_Drift_HUD_Public_Test_01_WINDOWS.zip" -Force
+          Compress-Archive -Path "PUBLIC_RELEASE\093_Drift_HUD_Public_Test_02" -DestinationPath "093_Drift_HUD_Public_Test_02_WINDOWS.zip" -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 093_Drift_HUD_Public_Test_01_WINDOWS
-          path: 093_Drift_HUD_Public_Test_01_WINDOWS.zip
+          name: 093_Drift_HUD_Public_Test_02_WINDOWS
+          path: 093_Drift_HUD_Public_Test_02_WINDOWS.zip
