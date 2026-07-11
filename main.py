@@ -101,8 +101,8 @@ REAR_SLIP_DISPLAY_MAX = 1.70   # lower = RL/RR bars grow faster, higher = calmer
 POPUP_OPERATION_SECONDS = 1.25
 POPUP_EVENT_SECONDS = 1.15
 POPUP_COOLDOWN_SECONDS = 0.90
-OPERATION_POPUP_SECONDS = 1.25
-OPERATION_POPUP_COOLDOWN_SECONDS = 0.55
+OPERATION_POPUP_SECONDS = 0.92
+OPERATION_POPUP_COOLDOWN_SECONDS = 0.72
 POPUP_EMPTY_DRAG_HINT_ALPHA = 62  # shown only while Alt is held, so empty popups can be moved
 
 # LIVE107 visual pass: cleaner pop-street finish.
@@ -116,6 +116,13 @@ STREET_OFFWHITE = QColor(248, 252, 255) # REBASE: bright neutral white, no beige
 STREET_AMBER = QColor(255, 184, 54)     # LIVE169: stronger stream orange
 STREET_MINT = QColor(82, 255, 235)      # LIVE169: stronger stream mint
 STREET_CHARCOAL = QColor(5, 8, 13)
+
+# LIVE226: angle palette.  Keep the left/right readability, but move away from
+# cheap neon toward a cleaner street-HUD look.
+ANGLE_LEFT_ICE = QColor(85, 223, 255)      # #55DFFF
+ANGLE_RIGHT_ROSE = QColor(255, 63, 155)    # #FF3F9B
+ANGLE_LIMIT_AMBER = QColor(255, 184, 74)   # #FFB84A
+ANGLE_DANGER_ORANGE = QColor(255, 74, 61)  # #FF4A3D
 
 
 def clamp(v, lo, hi):
@@ -359,10 +366,13 @@ class AngleOverlay(QWidget):
         self.popup_priority = 0
         self.operation_popup_text = ""
         self.operation_popup_ttl = 0
+        self.operation_popup_total_ttl = 0
         self.prev_handbrake_pct = 0.0
         self.prev_clutch_pct = 0.0
         self.prev_brake_pct = 0.0
         self.prev_accel_pct = 0.0
+        self.input_flash_ttl = {"H": 0, "C": 0, "B": 0, "T": 0, "COUNTER": 0}
+        self.input_flash_peak = {"H": 0.0, "C": 0.0, "B": 0.0, "T": 0.0, "COUNTER": 0.0}
         self.long_hold_shown = False
         self.spin_save_armed = False
         self.spin_save_cooldown = 0
@@ -372,6 +382,8 @@ class AngleOverlay(QWidget):
         self.style_override_label = ""
         self.style_override_ttl = 0
         self.packet_status_text = "NO DATA"
+        self.connection_notice_until = 0.0
+        self.data_wait_pulse = 0.0
         self.position_x = 0.0
         self.position_y = 0.0
         self.position_z = 0.0
@@ -404,17 +416,13 @@ class AngleOverlay(QWidget):
         self.last_drift_state = 'GRIP'
         self.last_style_label = 'CLEAN'
         self.car_name_map = load_car_name_map()
-        self.widget_offsets = {
-            "vehicle_info": [0.0, 0.0],
-            "input": [0.0, 0.0],
-            "drift_panel": [0.0, 0.0],
-            "style_panel": [0.0, 0.0],
-            "map_panel": [0.0, 0.0],
-            "g_meter": [0.0, 0.0],
-            "steer_panel": [0.0, 0.0],
-            "popup_panel": [0.0, 0.0],
-            "operation_popup_panel": [0.0, 0.0],
+        self.widget_offsets = self._default_widget_offsets()
+        # LIVE224: layout positions are stored separately per HUD profile/resolution.
+        # 1080P edits no longer affect 1440P edits, and vice versa.
+        self.layout_profiles = {
+            profile: self._default_widget_offsets() for profile in HUD_PROFILE_ORDER
         }
+        self._active_layout_profile = self.hud_profile
         self.drag_mode = None
         self.drag_widget = None
         self.drag_origin = None
@@ -545,22 +553,76 @@ class AngleOverlay(QWidget):
             self.simhub_forward_count += 1
         except OSError as e:
             self.simhub_forward_error = f"SIMHUB FORWARD ERROR: {e}"
+    def _default_widget_offsets(self):
+        return {
+            "vehicle_info": [0.0, 0.0],
+            "input": [0.0, 0.0],
+            "drift_panel": [0.0, 0.0],
+            "style_panel": [0.0, 0.0],
+            "map_panel": [0.0, 0.0],
+            "g_meter": [0.0, 0.0],
+            "steer_panel": [0.0, 0.0],
+            "popup_panel": [0.0, 0.0],
+            "operation_popup_panel": [0.0, 0.0],
+        }
+
+    def _copy_widget_offsets(self, source):
+        base = self._default_widget_offsets()
+        if isinstance(source, dict):
+            for key in base.keys():
+                value = source.get(key)
+                if isinstance(value, list) and len(value) == 2:
+                    try:
+                        base[key] = [float(value[0]), float(value[1])]
+                    except Exception:
+                        pass
+        return base
+
+    def _layout_profile_key(self, profile=None):
+        profile = str(profile or getattr(self, "hud_profile", "1440P STREAM"))
+        return profile if profile in HUD_PROFILE_VISIBILITY else "1440P STREAM"
+
+    def _activate_layout_profile(self, profile=None, save_current=True):
+        if not hasattr(self, "layout_profiles"):
+            return
+        if save_current and hasattr(self, "_active_layout_profile"):
+            self.layout_profiles[self._layout_profile_key(self._active_layout_profile)] = self._copy_widget_offsets(getattr(self, "widget_offsets", {}))
+        key = self._layout_profile_key(profile)
+        if key not in self.layout_profiles:
+            self.layout_profiles[key] = self._default_widget_offsets()
+        self._active_layout_profile = key
+        self.widget_offsets = self._copy_widget_offsets(self.layout_profiles[key])
+
     def _load_layout_config(self):
         path = self._layout_config_path()
         if not path.exists():
+            self._activate_layout_profile(self.hud_profile, save_current=False)
             return
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            for key in self.widget_offsets.keys():
-                if key in data and isinstance(data[key], list) and len(data[key]) == 2:
-                    self.widget_offsets[key] = [float(data[key][0]), float(data[key][1])]
+            if isinstance(data, dict) and any(k in data and isinstance(data.get(k), dict) for k in HUD_PROFILE_ORDER):
+                for profile in HUD_PROFILE_ORDER:
+                    if isinstance(data.get(profile), dict):
+                        self.layout_profiles[profile] = self._copy_widget_offsets(data.get(profile))
+            elif isinstance(data, dict):
+                # Legacy layout file: copy old 1440P-style offsets to 1440P profiles and
+                # scaled offsets to 1080P profiles, then keep them separated from now on.
+                legacy = self._copy_widget_offsets(data)
+                legacy_1080 = {k: [v[0] * 0.75, v[1] * 0.75] for k, v in legacy.items()}
+                for profile in HUD_PROFILE_ORDER:
+                    self.layout_profiles[profile] = self._copy_widget_offsets(legacy_1080 if profile.startswith("1080P") else legacy)
+            self._activate_layout_profile(self.hud_profile, save_current=False)
         except Exception:
-            pass
+            self._activate_layout_profile(self.hud_profile, save_current=False)
 
     def _save_layout_config(self):
         path = self._layout_config_path()
         try:
-            path.write_text(json.dumps(self.widget_offsets, ensure_ascii=False, indent=2), encoding="utf-8")
+            if hasattr(self, "layout_profiles"):
+                self.layout_profiles[self._layout_profile_key()] = self._copy_widget_offsets(self.widget_offsets)
+                path.write_text(json.dumps(self.layout_profiles, ensure_ascii=False, indent=2), encoding="utf-8")
+            else:
+                path.write_text(json.dumps(self.widget_offsets, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
             pass
 
@@ -741,6 +803,9 @@ class AngleOverlay(QWidget):
                 cyl_label = f"I{self.num_cylinders}" if self.num_cylinders > 0 else "ENG"
                 self.engine_label = f"{cyl_label} / {self.rpm_max / 1000.0:.1f}K"
 
+                if self.packet_count == 0:
+                    self.connection_notice_until = time.monotonic() + 3.0
+                    self._show_control_notice("FH6 DATA CONNECTED", 1.8)
                 self.packet_count += 1
                 self.last_packet_ms = 0
                 got = True
@@ -782,6 +847,7 @@ class AngleOverlay(QWidget):
             self.position_z = math.sin(self.demo_phase * 0.45) * 160 + math.cos(self.demo_phase * 1.1) * 22
 
         self.last_packet_ms += 16
+        self.data_wait_pulse += 0.035
         dt = 0.016
 
         # Smooth displayed angle a little so it does not vibrate too hard.
@@ -1057,6 +1123,7 @@ class AngleOverlay(QWidget):
             self.operation_popup_ttl -= 1
         else:
             self.operation_popup_text = ""
+            self.operation_popup_total_ttl = 0
 
         # Extra popup events to restore richer callouts.
         # Operation popups are intentionally high priority because they are useful on stream.
@@ -1069,26 +1136,56 @@ class AngleOverlay(QWidget):
             self.brake_pct >= 48 and self.prev_brake_pct < 20 and
             self.handbrake_pct < 18 and self.speed_kmh > 10
         )
+        throttle_punch = (
+            self.accel_pct >= 68 and self.prev_accel_pct < 28 and
+            self.speed_kmh > 8 and abs_angle >= 12
+        )
+        counter_snap = (
+            self.counter_pct >= 58 and self.prev_steer_pct < 34 and
+            abs_angle >= 24 and self.speed_kmh > 12
+        )
 
-        # LIVE102: operation popups are now independent from the normal popup.
-        # This keeps HANDBRAKE / FOOT BRAKE / CLUTCH KICK visible even when
-        # ENTRY, SMOKE, BIG ANGLE, LONG HOLD, etc. are also firing.
+        def flash_input(key, value=100.0, seconds=0.34):
+            try:
+                self.input_flash_ttl[key] = max(self.input_flash_ttl.get(key, 0), int(seconds / max(dt, 0.001)))
+                self.input_flash_peak[key] = max(float(self.input_flash_peak.get(key, 0.0)), float(value))
+            except Exception:
+                pass
+
+        # LIVE201: operation popups are short visual hits.  They are meant to look
+        # good on stream, not to explain a score system.
+        if handbrake_hit:
+            flash_input("H", self.handbrake_pct, 0.44)
+        if clutch_kick:
+            flash_input("C", self.clutch_pct, 0.38)
+        if foot_brake:
+            flash_input("B", self.brake_pct, 0.34)
+        if throttle_punch:
+            flash_input("T", self.accel_pct, 0.30)
+        if counter_snap:
+            flash_input("COUNTER", self.counter_pct, 0.32)
+
+        # LIVE102: operation popups are independent from the normal popup.
+        # LIVE201: wording is shorter and more visual: no long scoring labels.
         if self.operation_popup_cooldown <= 0:
             if handbrake_hit:
-                self.operation_popup_text = "HANDBRAKE!"
+                self.operation_popup_text = "HANDBRAKE"
                 self.operation_popup_ttl = int(OPERATION_POPUP_SECONDS / dt)
+                self.operation_popup_total_ttl = max(1, self.operation_popup_ttl)
                 self.operation_popup_cooldown = int(OPERATION_POPUP_COOLDOWN_SECONDS / dt)
                 self.style_override_label = "ENTRY"
                 self.style_override_ttl = int(1.15 / dt)
             elif clutch_kick:
-                self.operation_popup_text = "CLUTCH KICK!"
+                self.operation_popup_text = "CLUTCH"
                 self.operation_popup_ttl = int(OPERATION_POPUP_SECONDS / dt)
+                self.operation_popup_total_ttl = max(1, self.operation_popup_ttl)
                 self.operation_popup_cooldown = int(OPERATION_POPUP_COOLDOWN_SECONDS / dt)
                 self.style_override_label = "KICK"
                 self.style_override_ttl = int(1.15 / dt)
             elif foot_brake:
-                self.operation_popup_text = "FOOT BRAKE!"
+                self.operation_popup_text = "BRAKE"
                 self.operation_popup_ttl = int(OPERATION_POPUP_SECONDS / dt)
+                self.operation_popup_total_ttl = max(1, self.operation_popup_ttl)
                 self.operation_popup_cooldown = int(OPERATION_POPUP_COOLDOWN_SECONDS / dt)
                 self.style_override_label = "BRAKE"
                 self.style_override_ttl = int(1.15 / dt)
@@ -1105,6 +1202,12 @@ class AngleOverlay(QWidget):
                 self.request_popup("SMOKE RUN!", dt, seconds=1.10, cooldown_seconds=1.4)
             elif self.drift_state == "ENTRY" and self.last_drift_state != "ENTRY":
                 self.request_popup("ENTRY!", dt, seconds=1.00, cooldown_seconds=1.1)
+
+        for _flash_key in list(getattr(self, "input_flash_ttl", {}).keys()):
+            if self.input_flash_ttl[_flash_key] > 0:
+                self.input_flash_ttl[_flash_key] -= 1
+            else:
+                self.input_flash_peak[_flash_key] = 0.0
 
         self.last_drift_state = self.drift_state
         self.last_style_label = self.style_label
@@ -1296,8 +1399,8 @@ class AngleOverlay(QWidget):
 
     def _use_1080p_safe_startup_profile(self):
         # Public release safety: 1440p layouts can push panels toward the edge on
-        # 1080p displays. On low-height screens, start in the dedicated 1080P STREAM
-        # profile so users can see the HUD and still switch profiles with Ctrl+F9.
+        # 1080p displays. On low-height screens, start in the dedicated 1080P FULL
+        # profile so all panels, including WHEEL / COUNTER and INPUT / CAR INFO, are visible.
         h = self._screen_height_for_profile_safety()
         return 0 < h < 1200
 
@@ -1313,8 +1416,8 @@ class AngleOverlay(QWidget):
             print(f"HUD PROFILE CONFIG ERROR: {e}")
 
         if self._use_1080p_safe_startup_profile() and not str(self.hud_profile).startswith("1080P"):
-            self.hud_profile = "1080P STREAM"
-            print("Screen safety: low-height display detected; starting in 1080P STREAM profile.")
+            self.hud_profile = "1080P FULL"
+            print("Screen safety: low-height display detected; starting in 1080P FULL profile.")
 
         self._apply_hud_profile(show_notice=False, save=False)
 
@@ -1328,6 +1431,12 @@ class AngleOverlay(QWidget):
     def _apply_hud_profile(self, show_notice=True, save=True):
         self.hud_visible = True
         self.panel_visibility.update(HUD_PROFILE_VISIBILITY.get(self.hud_profile, HUD_PROFILE_VISIBILITY["1440P STREAM"]))
+        # Safety: 1080P FULL is the all-panels startup profile for low-height displays.
+        if self.hud_profile == "1080P FULL":
+            self.panel_visibility["steer"] = True
+            self.panel_visibility["input_car"] = True
+        if hasattr(self, "layout_profiles"):
+            self._activate_layout_profile(self.hud_profile, save_current=save)
         if save:
             self._save_hud_profile_config()
         if show_notice:
@@ -1655,10 +1764,9 @@ class AngleOverlay(QWidget):
         return max(int(minimum), int(round(float(value) * self._ui_scale())))
 
     def _widget_offset(self, name):
+        # LIVE224: offsets are profile/resolution-specific and stored in actual screen pixels.
+        # Do not scale them again on 1080P; otherwise a saved 1080P drag would reload too small.
         dx, dy = self.widget_offsets.get(name, [0.0, 0.0])
-        if self._is_1080p_profile():
-            s = self._ui_scale()
-            return dx * s, dy * s
         return dx, dy
 
     def _profile_metric(self, name, default_value):
@@ -1674,16 +1782,18 @@ class AngleOverlay(QWidget):
             "angle_rise_max": 40.0,
             "angle_cy_factor": 0.882,
             "angle_bottom_pad": 33.0,
-            "map_w_factor": 0.75,
-            "map_h_factor": 0.75,
-            "g_w_factor": 0.75,
-            "g_h_factor": 0.75,
-            "drift_w_factor": 0.75,
-            "drift_h_factor": 0.75,
-            "steer_w_factor": 0.75,
-            "steer_h_factor": 0.75,
-            "input_w_factor": 0.68,
-            "input_h_factor": 0.66,
+            # LIVE221: 1080P final safety pass. Keep the same visual direction,
+            # but give the right-side stack and bottom widgets a little more room.
+            "map_w_factor": 0.72,
+            "map_h_factor": 0.70,
+            "g_w_factor": 0.72,
+            "g_h_factor": 0.72,
+            "drift_w_factor": 0.72,
+            "drift_h_factor": 0.72,
+            "steer_w_factor": 0.72,
+            "steer_h_factor": 0.72,
+            "input_w_factor": 0.64,
+            "input_h_factor": 0.62,
             "popup_w_factor": 0.75,
             "popup_h_factor": 0.75,
             "op_popup_w_factor": 0.75,
@@ -1799,6 +1909,65 @@ class AngleOverlay(QWidget):
         painter.drawText(QRectF(x1 - 100, y1 + 13, 98, 14), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "UNIT : DEG")
 
 
+
+    def draw_angle_energy_rail(self, painter):
+        # LIVE220: disabled. ANGLE is the main readable module, so background
+        # back-glow / scan rails are intentionally not drawn here.
+        return
+        layout = self._layout()
+        abs_angle = abs(self.display_angle)
+        if abs_angle < 2.0:
+            return
+
+        active_t = clamp(abs_angle / 60.0, 0.0, 1.0)
+        signed_t = active_t if self.display_angle >= 0 else -active_t
+        energy = clamp(abs_angle / 60.0, 0.0, 1.0)
+        angle_gain = max(0.0, abs_angle - getattr(self, "prev_angle_abs", 0.0))
+        punch = clamp(angle_gain / 2.8, 0.0, 1.0)
+        pulse = 0.5 + 0.5 * math.sin(time.monotonic() * (5.0 + 2.8 * energy))
+
+        path = QPainterPath()
+        steps = 62
+        start = 0.0
+        end = signed_t
+        for i in range(steps + 1):
+            u = i / steps
+            t = lerp(start, end, u)
+            pt = self.curve_point(t, layout)
+            if i == 0:
+                path.moveTo(pt)
+            else:
+                path.lineTo(pt)
+
+        side_color = QColor(ANGLE_RIGHT_ROSE) if signed_t >= 0 else QColor(ANGLE_LEFT_ICE)
+        # Wide aura: visible at deep angle, calm at shallow angle.
+        for width, alpha_mul in ((24.0, 0.08), (15.0, 0.14), (8.5, 0.24)):
+            c = QColor(side_color)
+            c.setAlpha(int(clamp(255 * (alpha_mul + 0.05 * punch + 0.025 * pulse) * energy, 0, 128)))
+            painter.setPen(QPen(c, self._sf(width), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawPath(path)
+
+        # Sharp core rail under the bars.  This makes the arc look like it is charging.
+        core = QColor(side_color)
+        core.setAlpha(int(clamp(80 + 116 * energy + 48 * punch, 0, 235)))
+        painter.setPen(QPen(core, self._sf(2.3 + 1.2 * energy), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawPath(path)
+
+        # Tip flare only near the current angle.  No text; just visual impact.
+        tip = self.curve_point(signed_t, layout)
+        flare_alpha = int(clamp(34 + 112 * energy + 78 * punch, 0, 220))
+        flare = QColor(side_color)
+        flare.setAlpha(flare_alpha)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(flare)
+        r1 = self._sf(8.0 + 9.0 * energy + 3.0 * punch)
+        painter.drawEllipse(tip, r1, r1)
+        white = QColor(255, 255, 255, int(clamp(28 + 55 * energy + 30 * punch, 0, 130)))
+        painter.setBrush(white)
+        r2 = self._sf(2.3 + 2.2 * energy)
+        painter.drawEllipse(tip, r2, r2)
+
+
     def draw_segmented_arc(self, painter):
         layout = self._layout()
         segments = 80
@@ -1807,8 +1976,10 @@ class AngleOverlay(QWidget):
         signed_t = active_t if self.display_angle >= 0 else -active_t
         angle_gain = max(0.0, abs_angle - self.prev_angle_abs)
         rise_energy = clamp(angle_gain / 2.4, 0.0, 1.0)
-        base_dim = 0.52 + 0.58 * rise_energy
-        active_energy = 0.12 + 0.88 * rise_energy
+        # LIVE203: keep steady deep angle visually strong; punch still reacts to quick angle gain.
+        depth_energy = clamp(abs_angle / 60.0, 0.0, 1.0)
+        base_dim = 0.50 + 0.42 * depth_energy + 0.28 * rise_energy
+        active_energy = 0.18 + 0.54 * depth_energy + 0.28 * rise_energy
 
         def zone_metrics(norm_abs):
             # Quieter at low angle, then grows from ~25deg, with a strong 45deg+ zone.
@@ -1905,7 +2076,7 @@ class AngleOverlay(QWidget):
             else:
                 alpha_bias = 4 if norm_abs >= 0.68 else 0
                 base_alpha = int(clamp((metrics["base_alpha"] + 18 + alpha_bias) * base_dim, 18, 170))
-                base_color = QColor(118, 240, 255, base_alpha) if t < 0 else QColor(255, 104, 142, base_alpha)
+                base_color = QColor(ANGLE_LEFT_ICE.red(), ANGLE_LEFT_ICE.green(), ANGLE_LEFT_ICE.blue(), base_alpha) if t < 0 else QColor(ANGLE_RIGHT_ROSE.red(), ANGLE_RIGHT_ROSE.green(), ANGLE_RIGHT_ROSE.blue(), base_alpha)
                 draw_bar(
                     p.x(),
                     p.y(),
@@ -1927,11 +2098,11 @@ class AngleOverlay(QWidget):
                 if signed_t >= 0:
                     on = 0.0 <= t <= signed_t + tip_width
                     hot_alpha = int(clamp(metrics["active_alpha"] + 12 + 36 * active_energy, 0, 255))
-                    color = QColor(255, 86 + int(10 * active_energy), 130 + int(12 * active_energy), hot_alpha)
+                    color = QColor(ANGLE_RIGHT_ROSE.red(), min(255, ANGLE_RIGHT_ROSE.green() + int(14 * active_energy)), min(255, ANGLE_RIGHT_ROSE.blue() + int(10 * active_energy)), hot_alpha)
                 else:
                     on = signed_t - tip_width <= t <= 0.0
                     hot_alpha = int(clamp(metrics["active_alpha"] + 12 + 36 * active_energy, 0, 255))
-                    color = QColor(88 + int(8 * active_energy), 238 + int(10 * active_energy), 255, hot_alpha)
+                    color = QColor(min(255, ANGLE_LEFT_ICE.red() + int(8 * active_energy)), min(255, ANGLE_LEFT_ICE.green() + int(10 * active_energy)), ANGLE_LEFT_ICE.blue(), hot_alpha)
                 if on:
                     dist_to_tip = abs(t - signed_t)
                     tip_level = 2 if dist_to_tip <= tip_width * 0.9 else 1 if dist_to_tip <= tip_width * 2.1 else 0
@@ -1970,37 +2141,37 @@ class AngleOverlay(QWidget):
                 width = 2.6
                 glow_alpha = 84
                 extra_glow = 4.0
-                core_color = QColor(58, 220, 255, 236) if value < 0 else QColor(255, 92, 190, 236)
+                core_color = QColor(ANGLE_LEFT_ICE.red(), ANGLE_LEFT_ICE.green(), ANGLE_LEFT_ICE.blue(), 236) if value < 0 else QColor(ANGLE_RIGHT_ROSE.red(), ANGLE_RIGHT_ROSE.green(), ANGLE_RIGHT_ROSE.blue(), 236)
             elif abs_value == 45:
                 tick_h = 18.8
                 width = 2.3
                 glow_alpha = 72
                 extra_glow = 3.7
-                core_color = QColor(100, 236, 255, 232) if value < 0 else QColor(255, 138, 178, 232)
+                core_color = QColor(120, 232, 255, 232) if value < 0 else QColor(255, 94, 170, 232)
             elif abs_value == 40:
                 tick_h = 16.2
                 width = 1.95
                 glow_alpha = 50
                 extra_glow = 2.9
-                core_color = QColor(74, 216, 248, 218) if value < 0 else QColor(255, 108, 164, 218)
+                core_color = QColor(100, 215, 242, 218) if value < 0 else QColor(235, 82, 150, 218)
             elif abs_value == 30:
                 tick_h = 15.0
                 width = 1.78
                 glow_alpha = 40
                 extra_glow = 2.45
-                core_color = QColor(142, 208, 224, 186) if value < 0 else QColor(236, 180, 208, 186)
+                core_color = QColor(132, 200, 216, 178) if value < 0 else QColor(220, 144, 178, 178)
             elif abs_value == 20:
                 tick_h = 13.2
                 width = 1.5
                 glow_alpha = 32
                 extra_glow = 2.0
-                core_color = QColor(148, 196, 210, 154) if value < 0 else QColor(228, 174, 198, 154)
+                core_color = QColor(142, 190, 204, 148) if value < 0 else QColor(210, 134, 164, 148)
             else:  # 10deg minor
                 tick_h = 9.4
                 width = 1.0
                 glow_alpha = 16
                 extra_glow = 1.4
-                core_color = QColor(184, 214, 224, 88) if value < 0 else QColor(230, 188, 208, 88)
+                core_color = QColor(172, 202, 212, 82) if value < 0 else QColor(205, 148, 174, 82)
 
             # Match the segment bars: same baseline, no extra tail below the segment row.
             p1 = QPointF(p.x(), p.y() - tick_h)
@@ -2050,9 +2221,9 @@ class AngleOverlay(QWidget):
 
     def draw_triangle_marker(self, painter, tip, t, layout):
         (tx, ty), (nx, ny) = self.tangent_and_normal(t, layout)
-        # Stronger directional marker: larger, accented glow, then crisp white core.
-        center = QPointF(tip.x() + nx * 19.0, tip.y() + ny * 19.0)
-        accent = QColor(255, 108, 142, 220) if t >= 0 else QColor(118, 240, 255, 220)
+        # LIVE220: crisp directional marker. Strong enough to read, not a background effect.
+        center = QPointF(tip.x() + nx * 17.0, tip.y() + ny * 17.0)
+        accent = QColor(ANGLE_RIGHT_ROSE.red(), ANGLE_RIGHT_ROSE.green(), ANGLE_RIGHT_ROSE.blue(), 220) if t >= 0 else QColor(ANGLE_LEFT_ICE.red(), ANGLE_LEFT_ICE.green(), ANGLE_LEFT_ICE.blue(), 220)
 
         def triangle_points(apex_len, base_len, half_width):
             apex = QPointF(center.x() - nx * apex_len, center.y() - ny * apex_len)
@@ -2068,17 +2239,17 @@ class AngleOverlay(QWidget):
         painter.drawPolygon(shadow)
 
         for apex_len, base_len, half_width, alpha in (
-            (18.6, 11.8, 15.0, 42),
-            (17.2, 10.8, 13.7, 92),
+            (17.8, 11.2, 14.2, 28),
+            (16.8, 10.4, 13.1, 72),
         ):
             glow = QColor(accent)
             glow.setAlpha(alpha)
             painter.setBrush(glow)
             painter.drawPolygon(triangle_points(apex_len, base_len, half_width))
 
-        painter.setPen(QPen(QColor(18, 22, 28, 206), 1.1))
+        painter.setPen(QPen(QColor(18, 22, 28, 222), 1.25))
         painter.setBrush(QColor(255, 255, 255, 252))
-        painter.drawPolygon(triangle_points(16.2, 9.8, 12.6))
+        painter.drawPolygon(triangle_points(15.6, 9.2, 11.8))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(255, 255, 255, 118))
         painter.drawPolygon(triangle_points(11.5, 7.1, 8.1))
@@ -2144,21 +2315,27 @@ class AngleOverlay(QWidget):
 
     def map_panel_geometry(self):
         # Default initial position aligned to the reference layout screenshot.
+        # LIVE221: 1080P is clamped so saved 1440p offsets cannot hide the map.
         w = int(456 * 0.80 * 0.95 * self._profile_metric("map_w_factor", 1.0))
         h = int(240 * 1.30 * 0.90 * self._profile_metric("map_h_factor", 1.0))
         x = self.width() - w - self._profile_metric("right_margin", 38)
         y = self._s(166)
         dx, dy = self._widget_offset("map_panel")
-        return x + dx, y + dy, w, h
+        x = clamp(x + dx, 8, self.width() - w - 8)
+        y = clamp(y + dy, 8, self.height() - h - 8)
+        return x, y, w, h
     def g_meter_geometry(self):
         # G telemetry is independently placed and independently draggable.
         # It no longer follows TRACK MAP when the map is moved.
+        # LIVE221: clamp on all profiles; especially important on 1080P.
         w = int(456 * 0.80 * 0.95 * self._profile_metric("g_w_factor", 1.0))
         h = int(250 * self._profile_metric("g_h_factor", 1.0))
         x = self.width() - w - self._profile_metric("right_margin", 38)
         y = self._s(388)
         dx, dy = self._widget_offset("g_meter")
-        return x + dx, y + dy, w, h
+        x = clamp(x + dx, 8, self.width() - w - 8)
+        y = clamp(y + dy, 8, self.height() - h - 8)
+        return x, y, w, h
 
     def drift_panel_geometry(self):
         # 1080p CAR STATUS uses a compact draw path, but still clamps to screen.
@@ -2514,14 +2691,25 @@ class AngleOverlay(QWidget):
             painter.setBrush(with_alpha(color, 220))
             painter.drawRoundedRect(QRectF(x + 1, y + 1, max(2, fw - 1), h - 2), 3, 3)
 
-    def draw_input_vertical_bar(self, painter, x, y, w, h, pct, label, color):
+    def draw_input_vertical_bar(self, painter, x, y, w, h, pct, label, color, pulse=0.0):
         pct = clamp(pct, 0.0, 100.0)
+        pulse = clamp(pulse, 0.0, 1.0)
 
         # Requested refinement: keep the same overall bar length, but use finer,
         # thinner stacked segments with a slightly taller feel and a bit more glow.
-        painter.setPen(QPen(QColor(200, 240, 255, 54), 1.0))
-        painter.setBrush(QColor(10, 18, 26, 18))
+        edge_alpha = int(54 + 96 * pulse)
+        bg_alpha = int(18 + 28 * pulse)
+        painter.setPen(QPen(QColor(200, 240, 255, edge_alpha), 1.0 + 0.65 * pulse))
+        painter.setBrush(QColor(10, 18, 26, bg_alpha))
         painter.drawRoundedRect(QRectF(x, y, w, h), 3.4, 3.4)
+
+        if pulse > 0.02:
+            flash = QColor(color)
+            flash.setAlpha(int(42 + 92 * pulse))
+            painter.setPen(QPen(flash, 2.0 + 2.0 * pulse, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(QRectF(x - 2.0 - 2.0 * pulse, y - 2.0 - 2.0 * pulse,
+                                           w + 4.0 + 4.0 * pulse, h + 4.0 + 4.0 * pulse), 5.0, 5.0)
 
         inner_pad_x = 1.9
         inner_pad_y = 1.4
@@ -2558,10 +2746,10 @@ class AngleOverlay(QWidget):
             glow_rect = QRectF(fill_rect.x() - 0.55, fill_rect.y() - 0.55, fill_rect.width() + 1.1, fill_rect.height() + 1.1)
 
             glow = QColor(base)
-            glow.setAlpha(76)
+            glow.setAlpha(int(76 + 92 * pulse))
             fill = QColor(base)
-            fill.setAlpha(226)
-            core = QColor(255, 255, 255, 44)
+            fill.setAlpha(int(226 + 24 * pulse))
+            core = QColor(255, 255, 255, int(44 + 54 * pulse))
 
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(glow)
@@ -2575,8 +2763,9 @@ class AngleOverlay(QWidget):
             painter.setBrush(core)
             painter.drawRoundedRect(hi_rect, 0.9, 0.9)
 
-        painter.setFont(QFont("Arial Black", self._font_size(10)))
-        painter.setPen(QColor(242, 248, 255, 226))
+        painter.setFont(QFont("Arial Black", self._font_size(10 + 2 * pulse)))
+        label_color = QColor(242, 248, 255, int(226 + 29 * pulse))
+        painter.setPen(label_color)
         painter.drawText(QRectF(x - 7, y + h + 4, w + 14, 18), Qt.AlignmentFlag.AlignCenter, label)
 
     def draw_car_info_frame(self, painter, x, y, w, h):
@@ -2823,6 +3012,32 @@ class AngleOverlay(QWidget):
         self.draw_marker_line(painter, left + 1, meta_y + 40, x + w - 18, meta_y + 37, STREET_CORAL, 1.2, 64)
 
         info_y = meta_y + 48
+
+        # LIVE211: CAR INFO gets a small meter-like RPM rail.
+        # It is visual texture only; no new popups or confusing scoring words.
+        rpm_pct = clamp((self.rpm / max(1.0, self.rpm_max)) * 100.0, 0.0, 100.0)
+        rpm_y = meta_y + 40
+        rpm_x = left + 2
+        rpm_w = w - 34
+        seg_count = 14
+        seg_gap = 2.0
+        seg_w = max(3.0, (rpm_w - seg_gap * (seg_count - 1)) / seg_count)
+        painter.setFont(QFont("Consolas", 6, QFont.Weight.Bold))
+        painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 96))
+        painter.drawText(QRectF(rpm_x, rpm_y - 9, 38, 8), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "RPM")
+        for j in range(seg_count):
+            sx2 = rpm_x + j * (seg_w + seg_gap)
+            active = (j + 1) / seg_count * 100.0 <= rpm_pct
+            col = QColor(STREET_CORAL if j >= int(seg_count * 0.72) else STREET_AMBER if j >= int(seg_count * 0.50) else STREET_MINT)
+            col.setAlpha(168 if active else 30)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(col)
+            painter.drawRoundedRect(QRectF(sx2, rpm_y, seg_w, 5), 1.4, 1.4)
+        glow = QColor(STREET_CORAL if rpm_pct > 72 else STREET_MINT)
+        glow.setAlpha(int(18 + 42 * min(1.0, rpm_pct / 100.0)))
+        painter.setPen(QPen(glow, 1.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(rpm_x, rpm_y + 8), QPointF(rpm_x + rpm_w * rpm_pct / 100.0, rpm_y + 8))
+
         col_w = (w - 34) / 2.0
         for i, (label, value, accent) in enumerate((("DRIVE", drive_text, STREET_CORAL), ("ENGINE", engine_text, STREET_AMBER))):
             sx = left + i * (col_w + 6)
@@ -2851,6 +3066,22 @@ class AngleOverlay(QWidget):
         self.draw_cyber_panel(painter, x, y, w, h, None, accent, 30)
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        # LIVE210: make CAR STATUS feel like a reacting vehicle-analysis panel.
+        # Decorative only: no new confusing score/pop-up language.
+        pulse = clamp((abs(self.display_angle) / 90.0) * 0.42 + (self.spin_risk / 100.0) * 0.34, 0.0, 1.0)
+        scan_col = QColor(accent); scan_col.setAlpha(int(18 + 42 * pulse))
+        painter.setPen(QPen(scan_col, 0.75, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        for i in range(4):
+            sy = y + 34 + i * 31
+            painter.drawLine(QPointF(x + 10, sy), QPointF(x + w - 12, sy + 2))
+        rail_col = QColor(accent); rail_col.setAlpha(int(38 + 72 * pulse))
+        painter.setPen(QPen(rail_col, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(x + w - 10, y + 30), QPointF(x + w - 10, y + h - 26))
+        painter.setFont(QFont("Consolas", 6, QFont.Weight.Bold))
+        painter.setPen(QColor(235, 250, 255, int(92 + 46 * pulse)))
+        painter.drawText(QRectF(x + w - 84, y + 17, 70, 10), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "VECTOR//LIVE")
+
         left = x + 14
         right = x + w - 14
         inner_w = right - left
@@ -2869,12 +3100,13 @@ class AngleOverlay(QWidget):
                 painter.drawRoundedRect(QRectF(bx + 1, by + 1, fw, bh - 2), 3, 3)
 
         self.draw_street_label(painter, left, y + 18, "CAR STATUS", STREET_CORAL, max_w=118, compact=True)
-        painter.setFont(QFont("Arial Black", 19))
+        painter.setFont(QFont("Arial Black", 17 if self._is_1080p_profile() else 19))
         painter.setPen(accent)
-        painter.drawText(QRectF(left, y + 36, inner_w, 26), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.drift_state)
+        painter.drawText(QRectF(left, y + 36, inner_w, 24 if self._is_1080p_profile() else 26), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.drift_state)
         painter.setFont(QFont("Bahnschrift", 8, QFont.Weight.Bold))
-        painter.setPen(QColor(238, 250, 255, 174))
-        painter.drawText(QRectF(left, y + 61, inner_w, 13), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.state_reason)
+        painter.setPen(QColor(238, 250, 255, 138))
+        reason_text = QFontMetrics(painter.font()).elidedText(str(self.state_reason), Qt.TextElideMode.ElideRight, int(inner_w))
+        painter.drawText(QRectF(left, y + 61, inner_w, 13), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, reason_text)
 
         # FLOW
         flow_y = y + 84
@@ -2923,6 +3155,19 @@ class AngleOverlay(QWidget):
         painter.setPen(limit_col)
         painter.drawText(QRectF(left + 43, limit_y - 1, 54, 14), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.spin_label)
         mini_bar(left, limit_y + 18, bar_w, 9, limit_value, limit_col)
+        # LIVE217: compact LIMIT needle for 1080p too.
+        tick_col = QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 46)
+        painter.setPen(QPen(tick_col, 0.7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        for tp in (0.33, 0.66, 0.86):
+            tx = left + bar_w * tp
+            painter.drawLine(QPointF(tx, limit_y + 16), QPointF(tx, limit_y + 29))
+        risk_x = left + bar_w * clamp(limit_value / 100.0, 0.0, 1.0)
+        needle_col = QColor(limit_col); needle_col.setAlpha(206)
+        painter.setPen(QPen(needle_col, 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(risk_x, limit_y + 14), QPointF(risk_x, limit_y + 31))
+        painter.setBrush(QColor(limit_col.red(), limit_col.green(), limit_col.blue(), 80))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QPointF(risk_x, limit_y + 22.5), 2.5, 2.5)
         painter.setFont(QFont("Bahnschrift", 10, QFont.Weight.Bold))
         painter.drawText(QRectF(left + bar_w + 8, limit_y + 14, value_w, 16), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{round(self.spin_risk):d}%")
         painter.restore()
@@ -3028,8 +3273,33 @@ class AngleOverlay(QWidget):
         self.draw_marker_line(painter, left + 1, meta_y + 54, left + min(w - 46, 184), meta_y + 50,
                               STREET_CORAL, 1.6, 58)
 
+        # LIVE211: CAR INFO meter layer.  Keep it decorative and readable;
+        # do not turn this panel into a dense debug display.
+        rpm_pct = clamp((self.rpm / max(1.0, self.rpm_max)) * 100.0, 0.0, 100.0)
+        rpm_y = meta_y + 55
+        rpm_x = left + 2
+        rpm_w = w - 40
+        seg_count = 18
+        seg_gap = 2.0
+        seg_w = max(4.0, (rpm_w - seg_gap * (seg_count - 1)) / seg_count)
+        painter.setFont(QFont("Consolas", self._font_size(7), QFont.Weight.Bold))
+        painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 105))
+        painter.drawText(QRectF(rpm_x, rpm_y - 11, 44, 10), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "RPM")
+        for j in range(seg_count):
+            sx2 = rpm_x + j * (seg_w + seg_gap)
+            active = (j + 1) / seg_count * 100.0 <= rpm_pct
+            col = QColor(STREET_CORAL if j >= int(seg_count * 0.74) else STREET_AMBER if j >= int(seg_count * 0.52) else STREET_MINT)
+            col.setAlpha(180 if active else 32)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(col)
+            painter.drawRoundedRect(QRectF(sx2, rpm_y, seg_w, 7), 1.8, 1.8)
+        glow = QColor(STREET_CORAL if rpm_pct > 72 else STREET_MINT)
+        glow.setAlpha(int(22 + 52 * min(1.0, rpm_pct / 100.0)))
+        painter.setPen(QPen(glow, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(rpm_x, rpm_y + 11), QPointF(rpm_x + rpm_w * rpm_pct / 100.0, rpm_y + 11))
+
         # DRIVE / ENGINE: compact spec tags instead of panel-like columns.
-        info_y = meta_y + 64
+        info_y = meta_y + 70
         stats = [("DRIVE", drive_text, STREET_CORAL), ("ENGINE", engine_text, STREET_AMBER)]
         col_w = (w - 42) / 2.0
         for i, (label, value, accent) in enumerate(stats):
@@ -3058,39 +3328,81 @@ class AngleOverlay(QWidget):
         x, y, w, h = self.input_group_geometry()
 
         rows = [
-            ("H", self.handbrake_pct, QColor(STREET_AMBER)),
-            ("C", self.clutch_pct, QColor(STREET_MINT)),
-            ("B", self.brake_pct, QColor(STREET_AMBER)),
+            ("H", self.handbrake_pct, QColor(255, 168, 64)),
+            ("C", self.clutch_pct, QColor(184, 118, 255)),
+            ("B", self.brake_pct, QColor(255, 96, 88)),
             ("T", self.accel_pct, QColor(STREET_MINT)),
         ]
 
-        # LIVE110: INPUT stays compact, but now has the same clean street label
-        # language as the larger panels.  No added data, only a clearer identity.
+        # LIVE212: INPUT becomes a small reactive instrument plate.  No new
+        # text popups are added here; the goal is only to make the actual
+        # control movement look sharper and more premium on stream.
         self.draw_street_label(painter, x + 2, y - 8, "INPUT", STREET_CORAL, max_w=86, compact=True)
-        self.draw_halftone_dots(painter, x + w - 30, y + 4, STREET_CORAL, rows=2, cols=4, spacing=4.2, radius=0.75, alpha=16)
-        self.draw_graffiti_arrow(painter, x + 58, y + 10, x + 74, y + 7, STREET_CORAL, 1.2, 42)
-        self.draw_graffiti_cross(painter, x + w - 10, y + (90 if self._is_1080p_profile() else 126), STREET_CORAL, 0.48 if self._is_1080p_profile() else 0.58, 34)
 
-        if self._is_1080p_profile():
-            bar_w = 9
-            bar_h = 76
+        compact_1080 = self._is_1080p_profile()
+        if compact_1080:
+            # LIVE221: a little more breathing room at 1080P.
+            bar_w = 8
+            bar_h = 70
             gap = 5
+            bar_y = y + 15
         else:
             bar_w = 13
             bar_h = 112
             gap = 6
+            bar_y = y + 18
+
         total_w = len(rows) * bar_w + (len(rows) - 1) * gap
         start_x = x + (w - total_w) * 0.5
-        bar_y = y + (16 if self._is_1080p_profile() else 18)
+
+        # Reactive backing plate: handbrake/brake activity gives the panel a
+        # short hot edge without needing another word popup.
+        h_pulse = clamp(max(0, int(getattr(self, "input_flash_ttl", {}).get("H", 0))) / 18.0, 0.0, 1.0)
+        b_pulse = clamp(max(0, int(getattr(self, "input_flash_ttl", {}).get("B", 0))) / 18.0, 0.0, 1.0)
+        c_pulse = clamp(max(0, int(getattr(self, "input_flash_ttl", {}).get("C", 0))) / 18.0, 0.0, 1.0)
+        hot_pulse = max(h_pulse, b_pulse, c_pulse * 0.72)
+
+        plate_h = bar_h + (32 if compact_1080 else 40)
+        plate_y = bar_y - 8
+        plate = QRectF(x + 3, plate_y, w - 6, plate_h)
+        plate_grad = QLinearGradient(plate.left(), plate.top(), plate.right(), plate.bottom())
+        plate_grad.setColorAt(0.00, QColor(255, 88, 64, int(16 + 26 * hot_pulse)))
+        plate_grad.setColorAt(0.32, QColor(8, 18, 28, int(34 + 12 * hot_pulse)))
+        plate_grad.setColorAt(0.78, QColor(3, 8, 14, int(28 + 8 * hot_pulse)))
+        plate_grad.setColorAt(1.00, QColor(88, 230, 255, int(10 + 16 * c_pulse)))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(plate_grad)
+        painter.drawRoundedRect(plate, 8, 8)
+
+        rail = QColor(STREET_CORAL)
+        rail.setAlpha(int(48 + 94 * hot_pulse))
+        painter.setPen(QPen(rail, 1.35 + 1.0 * hot_pulse, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(plate.left() + 8, plate.top() + 5), QPointF(plate.left() + min(plate.width() * 0.62, 78), plate.top() + 2))
+        painter.drawLine(QPointF(plate.right() - min(plate.width() * 0.48, 60), plate.bottom() - 4), QPointF(plate.right() - 8, plate.bottom() - 7))
+
+        self.draw_halftone_dots(painter, x + w - 30, y + 4, STREET_CORAL, rows=2, cols=4, spacing=4.2, radius=0.75, alpha=int(16 + 18 * hot_pulse))
+        self.draw_graffiti_arrow(painter, x + 58, y + 10, x + 74, y + 7, STREET_CORAL, 1.2, int(42 + 42 * hot_pulse))
+        self.draw_graffiti_cross(painter, x + w - 10, y + (90 if compact_1080 else 126), STREET_CORAL, 0.48 if compact_1080 else 0.58, int(34 + 42 * h_pulse))
 
         for i, (letter, value, color) in enumerate(rows):
             bx = start_x + i * (bar_w + gap)
-            # tiny sticker shadow behind each stack so the bars read on bright road reflections
-            shade = QColor(STREET_CHARCOAL); shade.setAlpha(22)
+            pulse_frames = max(0, int(getattr(self, "input_flash_ttl", {}).get(letter, 0)))
+            pulse = clamp(pulse_frames / 18.0, 0.0, 1.0)
+
+            # Small top cap reacts to the input hit, making the bars feel like
+            # physical illuminated switches instead of plain graphs.
+            cap = QColor(color)
+            cap.setAlpha(int(28 + 105 * pulse))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(cap)
+            painter.drawRoundedRect(QRectF(bx - 1.0, bar_y - 7.0, bar_w + 2.0, 3.0 + 1.5 * pulse), 2, 2)
+
+            shade = QColor(STREET_CHARCOAL); shade.setAlpha(int(24 + 34 * pulse))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(shade)
-            painter.drawRoundedRect(QRectF(bx - 2, bar_y - 2, bar_w + 4, bar_h + 6), 4, 4)
-            self.draw_input_vertical_bar(painter, bx, bar_y, bar_w, bar_h, value, letter, color)
+            painter.drawRoundedRect(QRectF(bx - 2 - 1.5 * pulse, bar_y - 2 - 1.5 * pulse,
+                                           bar_w + 4 + 3.0 * pulse, bar_h + 6 + 3.0 * pulse), 4, 4)
+            self.draw_input_vertical_bar(painter, bx, bar_y, bar_w, bar_h, value, letter, color, pulse=pulse)
 
     def draw_value_bar(self, painter, x, y, w, h, pct, fill_color, bg_alpha=22):
         painter.setPen(QPen(QColor(220, 245, 255, 42), 1.0))
@@ -3198,8 +3510,14 @@ class AngleOverlay(QWidget):
         # LIVE163: viewer-facing WHEEL / COUNTER panel.
         # Same size and position, but the arrows carry the meaning before the text does.
         label_x = x + 10
-        bar_x = x + 82
-        bar_w = w - 92
+        # LIVE225: WHEEL / COUNTER segments were visually too large.
+        # Keep the panel/zero alignment, but make the segmented bars about 30% smaller.
+        full_bar_x = x + 82
+        full_bar_w = w - 92
+        bar_w = full_bar_w * 0.70
+        bar_x = full_bar_x + (full_bar_w - bar_w) * 0.5
+        bar_h = 10
+        bar_mid = bar_h * 0.5
         row1_y = y + 15
         row2_y = y + 45
 
@@ -3217,21 +3535,47 @@ class AngleOverlay(QWidget):
 
         zero_x = bar_x + bar_w * 0.5
 
-        self.draw_signed_center_bar(painter, bar_x, row1_y, bar_w, 14, self.steer_pct, QColor(STREET_AMBER), QColor(STREET_MINT))
-        self.draw_counter_bar(painter, bar_x, row2_y, bar_w, 14, self.counter_pct)
+        # LIVE204: make WHEEL / COUNTER feel alive without adding extra popup text.
+        # The glow reacts to steering/counter strength but stays behind the bars.
+        steer_energy = min(1.0, abs(float(self.steer_pct)) / 100.0)
+        counter_energy = min(1.0, float(self.counter_pct) / 100.0)
+        if steer_energy > 0.18:
+            glow_col = QColor(STREET_AMBER if self.steer_pct < 0 else STREET_MINT)
+            glow_col.setAlpha(int(24 + 54 * steer_energy))
+            end_x = zero_x + (bar_w * 0.5) * (float(self.steer_pct) / 100.0)
+            painter.setPen(QPen(glow_col, 4.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawLine(QPointF(zero_x, row1_y + bar_mid), QPointF(end_x, row1_y + bar_mid))
+        if counter_energy > 0.22:
+            glow_col = QColor(255, 166, 70) if counter_energy < 0.75 else QColor(255, 92, 108)
+            if counter_energy < 0.42:
+                glow_col = QColor(STREET_MINT)
+            glow_col.setAlpha(int(22 + 58 * counter_energy))
+            painter.setPen(QPen(glow_col, 4.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawLine(QPointF(bar_x, row2_y + bar_mid), QPointF(bar_x + bar_w * counter_energy, row2_y + bar_mid))
+
+        self.draw_signed_center_bar(painter, bar_x, row1_y, bar_w, bar_h, self.steer_pct, QColor(STREET_AMBER), QColor(STREET_MINT))
+        self.draw_counter_bar(painter, bar_x, row2_y, bar_w, bar_h, self.counter_pct)
+
+        if counter_energy > 0.68:
+            flare_col = QColor(255, 92, 108) if counter_energy > 0.80 else QColor(255, 166, 70)
+            flare_col.setAlpha(int(84 + 70 * counter_energy))
+            flare_x = bar_x + bar_w * counter_energy
+            painter.setPen(QPen(flare_col, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawLine(QPointF(flare_x - 8, row2_y - 5), QPointF(flare_x + 8, row2_y - 1))
+            painter.drawLine(QPointF(flare_x - 8, row2_y + bar_h + 5), QPointF(flare_x + 8, row2_y + bar_h + 1))
 
         # LIVE182: draw synced zero marker on top so it remains readable.
         painter.setPen(QPen(QColor(255, 255, 255, 118), 1.25, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawLine(QPointF(zero_x, row1_y - 8), QPointF(zero_x, row1_y + 8))
-        painter.drawLine(QPointF(zero_x, row2_y - 8), QPointF(zero_x, row2_y + 8))
+        painter.drawLine(QPointF(zero_x, row1_y - 6), QPointF(zero_x, row1_y + bar_h - 1))
+        painter.drawLine(QPointF(zero_x, row2_y - 6), QPointF(zero_x, row2_y + bar_h - 1))
         painter.setFont(QFont("Consolas", self._font_size(7), QFont.Weight.Bold))
         painter.setPen(QColor(255, 255, 255, 154))
-        painter.drawText(QRectF(zero_x - 10, row1_y + 8, 20, 10), Qt.AlignmentFlag.AlignCenter, "0")
+        painter.drawText(QRectF(zero_x - 10, row1_y + bar_h - 1, 20, 10), Qt.AlignmentFlag.AlignCenter, "0")
         self.draw_clean_spray(painter, bar_x + bar_w + 10, row2_y + 5, STREET_MINT, 0.54, 16)
 
         painter.setFont(QFont("Bahnschrift", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 196))
-        painter.drawText(QRectF(bar_x + bar_w - 40, row2_y + 13, 40, 13), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{round(self.counter_pct):d}%")
+        painter.drawText(QRectF(bar_x + bar_w - 40, row2_y + bar_h - 1, 40, 13), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{round(self.counter_pct):d}%")
 
     def update_live_map(self, abs_angle, holding_drift):
         x = float(self.position_x)
@@ -3292,12 +3636,55 @@ class AngleOverlay(QWidget):
         x, y, w, h = self.g_meter_geometry()
         self.draw_cyber_panel(painter, x, y, w, h, "G TELEMETRY", QColor(STREET_MINT), 34)
 
+        # LIVE218: global glow balance pass. G stays reactive, but no longer overpowers ANGLE.
+        g_total_fx = clamp(math.hypot(self.g_lat_display, self.g_long_display) / 1.35, 0.0, 1.0)
+        panel_pulse = 0.5 + 0.5 * math.sin(time.monotonic() * 7.4)
+        edge_alpha = int(22 + 42 * g_total_fx + 12 * panel_pulse * g_total_fx)
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        glow = QLinearGradient(x + 8, y + h * 0.30, x + w - 8, y + h * 0.80)
+        glow.setColorAt(0.0, QColor(STREET_MINT.red(), STREET_MINT.green(), STREET_MINT.blue(), int(2 + 7 * g_total_fx)))
+        glow.setColorAt(0.52, QColor(STREET_CORAL.red(), STREET_CORAL.green(), STREET_CORAL.blue(), int(3 + 12 * g_total_fx)))
+        glow.setColorAt(1.0, QColor(STREET_AMBER.red(), STREET_AMBER.green(), STREET_AMBER.blue(), int(2 + 8 * g_total_fx)))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(glow)
+        painter.drawRoundedRect(QRectF(x + 9, y + 35, w - 18, h - 48), 10, 10)
+
+        # Fine scanlines inside the panel, tied lightly to load amount.
+        painter.setPen(QPen(QColor(255, 255, 255, int(5 + 6 * g_total_fx)), 0.7))
+        scan_step = 9 if self._is_1080p_profile() else 10
+        yy = int(y + 44)
+        while yy < y + h - 26:
+            painter.drawLine(QPointF(x + 18, yy), QPointF(x + w - 18, yy + 1))
+            yy += scan_step
+
+        # Corner brackets and side rail make it feel like a live sensor module.
+        bracket_col = QColor(STREET_MINT.red(), STREET_MINT.green(), STREET_MINT.blue(), edge_alpha)
+        painter.setPen(QPen(bracket_col, 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        b = 18
+        painter.drawLine(QPointF(x + 13, y + 43), QPointF(x + 13 + b, y + 43))
+        painter.drawLine(QPointF(x + 13, y + 43), QPointF(x + 13, y + 43 + b))
+        painter.drawLine(QPointF(x + w - 13, y + 43), QPointF(x + w - 13 - b, y + 43))
+        painter.drawLine(QPointF(x + w - 13, y + 43), QPointF(x + w - 13, y + 43 + b))
+        painter.drawLine(QPointF(x + 13, y + h - 18), QPointF(x + 13 + b, y + h - 18))
+        painter.drawLine(QPointF(x + 13, y + h - 18), QPointF(x + 13, y + h - 18 - b))
+        painter.drawLine(QPointF(x + w - 13, y + h - 18), QPointF(x + w - 13 - b, y + h - 18))
+        painter.drawLine(QPointF(x + w - 13, y + h - 18), QPointF(x + w - 13, y + h - 18 - b))
+        painter.restore()
+
         # LIVE161: G TELEMETRY is a load/weight-shift readout.
         # Keep it compact and practical: cleaner ball, quieter trail, and short LOAD labels.
-        self.draw_halftone_dots(painter, x + w - 52, y + 24, STREET_MINT, rows=3, cols=5, spacing=4.4, radius=0.82, alpha=13)
-        self.draw_marker_line(painter, x + 18, y + h - 22, x + 76, y + h - 25, STREET_MINT, 1.7, 42)
-        self.draw_graffiti_arrow(painter, x + 80, y + h - 25, x + 96, y + h - 28, STREET_MINT, 1.1, 32)
-        self.draw_graffiti_cross(painter, x + w - 18, y + h - 20, STREET_MINT, 0.54, 26)
+        self.draw_halftone_dots(painter, x + w - 52, y + 24, STREET_MINT, rows=3, cols=5, spacing=4.4, radius=0.82, alpha=int(13 + 9 * g_total_fx))
+        self.draw_marker_line(painter, x + 18, y + h - 22, x + 76, y + h - 25, STREET_MINT, 1.7, int(42 + 24 * g_total_fx))
+        self.draw_graffiti_arrow(painter, x + 80, y + h - 25, x + 96, y + h - 28, STREET_MINT, 1.1, int(32 + 18 * g_total_fx))
+        self.draw_graffiti_cross(painter, x + w - 18, y + h - 20, STREET_MINT, 0.54, int(26 + 18 * g_total_fx))
+
+        painter.save()
+        painter.setFont(QFont("Consolas", self._font_size(7), QFont.Weight.Bold))
+        painter.setPen(QColor(STREET_MINT.red(), STREET_MINT.green(), STREET_MINT.blue(), int(72 + 80 * g_total_fx)))
+        painter.drawText(QRectF(x + w - 128, y + 24, 96, 12), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "LOAD//VECTOR")
+        painter.restore()
 
         cx = x + w * 0.375
         cy = y + h * 0.52
@@ -3309,6 +3696,10 @@ class AngleOverlay(QWidget):
 
         # Soft technical rings.
         painter.setBrush(Qt.BrushStyle.NoBrush)
+        reactive_alpha = int(22 + 76 * g_total_fx)
+        for rr, aa, ww in [(radius * (0.92 + 0.035 * g_total_fx), reactive_alpha, 3.5), (radius * 0.74, int(10 + 28 * g_total_fx), 1.7)]:
+            painter.setPen(QPen(QColor(STREET_MINT.red(), STREET_MINT.green(), STREET_MINT.blue(), aa), ww, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawEllipse(QPointF(cx, cy), rr, rr)
         for r, alpha, width in [(radius, 154, 1.9), (radius * 0.66, 72, 1.25), (radius * 0.34, 38, 0.9)]:
             painter.setPen(QPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), alpha), width))
             painter.drawEllipse(QPointF(cx, cy), r, r)
@@ -3395,7 +3786,7 @@ class AngleOverlay(QWidget):
 
         # Main point: still obvious, but less shouty than the old magenta blob.
         point_col = QColor(STREET_CORAL)
-        for glow_r, alpha in [(13.5, 28), (9.5, 54), (6.8, 96)]:
+        for glow_r, alpha in [(12.0, 22), (8.4, 44), (6.0, 82)]:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(point_col.red(), point_col.green(), point_col.blue(), alpha))
             painter.drawEllipse(QPointF(dot_x, dot_y), glow_r, glow_r)
@@ -3489,9 +3880,38 @@ class AngleOverlay(QWidget):
             gy = map_y + map_h * i / 4
             painter.drawLine(QPointF(map_x, gy), QPointF(map_x + map_w, gy))
 
+        # LIVE213: TRACK MAP texture pass.  Visual only; telemetry handling stays untouched.
+        # Adds a darker map bed, subtle scan texture and corner brackets so the panel
+        # feels like a real HUD module without becoming a full minimap yet.
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 28))
+        painter.drawRoundedRect(QRectF(map_x, map_y, map_w, map_h), 8, 8)
+
+        scan_alpha = 7
+        painter.setPen(QPen(QColor(STREET_CORAL.red(), STREET_CORAL.green(), STREET_CORAL.blue(), scan_alpha), 0.85))
+        scan_step = 18
+        scan_offset = int((time.monotonic() * 14) % scan_step)
+        yy = map_y + scan_offset
+        while yy < map_y + map_h:
+            painter.drawLine(QPointF(map_x + 4, yy), QPointF(map_x + map_w - 4, yy - 2))
+            yy += scan_step
+
         painter.setPen(QPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 62), 1.35))
         painter.setBrush(QColor(0, 0, 0, 0))
         painter.drawRoundedRect(QRectF(map_x, map_y, map_w, map_h), 8, 8)
+
+        bracket_col = QColor(STREET_CORAL.red(), STREET_CORAL.green(), STREET_CORAL.blue(), 118)
+        painter.setPen(QPen(bracket_col, 1.75, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        bl = 18
+        # corner brackets
+        painter.drawLine(QPointF(map_x + 2, map_y + bl), QPointF(map_x + 2, map_y + 4))
+        painter.drawLine(QPointF(map_x + 2, map_y + 4), QPointF(map_x + bl, map_y + 4))
+        painter.drawLine(QPointF(map_x + map_w - bl, map_y + 4), QPointF(map_x + map_w - 2, map_y + 4))
+        painter.drawLine(QPointF(map_x + map_w - 2, map_y + 4), QPointF(map_x + map_w - 2, map_y + bl))
+        painter.drawLine(QPointF(map_x + 2, map_y + map_h - bl), QPointF(map_x + 2, map_y + map_h - 4))
+        painter.drawLine(QPointF(map_x + 2, map_y + map_h - 4), QPointF(map_x + bl, map_y + map_h - 4))
+        painter.drawLine(QPointF(map_x + map_w - bl, map_y + map_h - 4), QPointF(map_x + map_w - 2, map_y + map_h - 4))
+        painter.drawLine(QPointF(map_x + map_w - 2, map_y + map_h - bl), QPointF(map_x + map_w - 2, map_y + map_h - 4))
 
         if not self.live_map_points:
             painter.setFont(QFont("Bahnschrift", self._font_size(11), QFont.Weight.Bold))
@@ -3522,8 +3942,8 @@ class AngleOverlay(QWidget):
                 if prev is not None:
                     is_drift_line = (p["drift"] or prev_drift)
                     col = QColor(STREET_AMBER.red(), STREET_AMBER.green(), STREET_AMBER.blue(), 238) if is_drift_line else QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 118)
-                    glow_col = QColor(col); glow_col.setAlpha(42 if is_drift_line else 18)
-                    painter.setPen(QPen(glow_col, 7.4 if is_drift_line else 5.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                    glow_col = QColor(col); glow_col.setAlpha(34 if is_drift_line else 14)
+                    painter.setPen(QPen(glow_col, 6.2 if is_drift_line else 4.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
                     painter.drawLine(prev, q)
                     painter.setPen(QPen(col, 5.7 if is_drift_line else 3.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
                     painter.drawLine(prev, q)
@@ -3551,13 +3971,35 @@ class AngleOverlay(QWidget):
             recent = self.live_map_points[-8:]
             if len(recent) >= 2:
                 prev_recent = None
+                recent_pts = []
                 for rp in recent:
                     rq = mp(rp["x"], rp["z"])
+                    recent_pts.append(rq)
                     if prev_recent is not None:
-                        recent_col = QColor(STREET_MINT.red(), STREET_MINT.green(), STREET_MINT.blue(), 112)
-                        painter.setPen(QPen(recent_col, 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                        recent_col = QColor(STREET_MINT.red(), STREET_MINT.green(), STREET_MINT.blue(), 126)
+                        painter.setPen(QPen(recent_col, 2.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
                         painter.drawLine(prev_recent, rq)
                     prev_recent = rq
+
+                # LIVE213: tiny motion arrow at the end of the recent line.
+                if len(recent_pts) >= 2:
+                    p0 = recent_pts[-2]
+                    p1 = recent_pts[-1]
+                    dx = p1.x() - p0.x()
+                    dy = p1.y() - p0.y()
+                    dist = math.hypot(dx, dy)
+                    if dist > 1.0:
+                        ux = dx / dist
+                        uy = dy / dist
+                        nx = -uy
+                        ny = ux
+                        tip = p1
+                        back = QPointF(p1.x() - ux * 12, p1.y() - uy * 12)
+                        left = QPointF(back.x() + nx * 5, back.y() + ny * 5)
+                        right = QPointF(back.x() - nx * 5, back.y() - ny * 5)
+                        painter.setPen(QPen(QColor(STREET_MINT.red(), STREET_MINT.green(), STREET_MINT.blue(), 170), 1.7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                        painter.drawLine(left, tip)
+                        painter.drawLine(right, tip)
 
         fy = y + h - 30
         painter.setFont(QFont("Bahnschrift", self._font_size(9), QFont.Weight.Bold))
@@ -3580,6 +4022,24 @@ class AngleOverlay(QWidget):
             return
         x, y, w, h = self.drift_panel_geometry()
         self.draw_cyber_panel(painter, x, y, w, h, None, STREET_CORAL, 62)
+
+        # LIVE210: CAR STATUS is an atmosphere panel first.
+        # It reacts to angle/risk with scan rails instead of adding more text to read.
+        atmos_pulse = clamp((abs(self.display_angle) / 90.0) * 0.45 + (self.spin_risk / 100.0) * 0.38, 0.0, 1.0)
+        base_scan = QColor(STREET_CORAL); base_scan.setAlpha(int(12 + 32 * atmos_pulse))
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(QPen(base_scan, 0.9, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        for i in range(6):
+            sy = y + 34 + i * 34
+            painter.drawLine(QPointF(x + 12, sy), QPointF(x + w - 16, sy + 3))
+        rail = QColor(STREET_CORAL); rail.setAlpha(int(46 + 88 * atmos_pulse))
+        painter.setPen(QPen(rail, 2.25, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(x + w - 13, y + 31), QPointF(x + w - 13, y + h - 30))
+        painter.setFont(QFont("Consolas", self._font_size(7), QFont.Weight.Bold))
+        painter.setPen(QColor(235, 250, 255, int(88 + 62 * atmos_pulse)))
+        painter.drawText(QRectF(x + w - 112, y + 18, 96, 12), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "VECTOR // LIVE")
+        painter.restore()
 
         state_colors = {
             "GRIP": QColor(190, 185, 172),
@@ -3651,8 +4111,9 @@ class AngleOverlay(QWidget):
         self.draw_halftone_dots(painter, right - 48, state_label_y + 4, STREET_CORAL, rows=3, cols=4, spacing=4.2, radius=0.95, alpha=24)
 
         painter.setFont(QFont("Bahnschrift", self._font_size(8), QFont.Weight.Bold))
-        painter.setPen(QColor(238, 250, 255, 178))
-        painter.drawText(QRectF(left, state_reason_y, inner_w, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.state_reason)
+        painter.setPen(QColor(238, 250, 255, 138))
+        reason_text = QFontMetrics(painter.font()).elidedText(str(self.state_reason), Qt.TextElideMode.ElideRight, int(inner_w))
+        painter.drawText(QRectF(left, state_reason_y, inner_w, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, reason_text)
 
         painter.setPen(QPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 42), 1.15))
         painter.drawLine(QPointF(left, sep1_y), QPointF(right, sep1_y))
@@ -3735,7 +4196,30 @@ class AngleOverlay(QWidget):
             self.draw_halftone_dots(painter, left + 128, limit_label_y + 4, limit_col, rows=2, cols=3, spacing=3.7, radius=0.76, alpha=18)
         limit_bar_x = left
         limit_bar_h = 12
+        # LIVE216: LIMIT row reacts like a compact sensor strip. No extra words.
+        if limit_value > 8:
+            risk_energy = clamp(limit_value / 100.0, 0.0, 1.0)
+            glow = QColor(limit_col); glow.setAlpha(int(clamp(12 + 46 * risk_energy, 0, 82)))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(glow)
+            painter.drawRoundedRect(QRectF(limit_bar_x - 4, limit_bar_y - 5, bar_w + 8, limit_bar_h + 10), 7, 7)
+            rail = QColor(limit_col); rail.setAlpha(int(clamp(28 + 68 * risk_energy, 0, 124)))
+            painter.setPen(QPen(rail, 1.15 + 0.9 * risk_energy, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawLine(QPointF(limit_bar_x, limit_bar_y + limit_bar_h + 8), QPointF(limit_bar_x + bar_w * risk_energy, limit_bar_y + limit_bar_h + 8))
         metric_bar(limit_bar_x, limit_bar_y, bar_w, limit_bar_h, limit_value, limit_col, 100.0)
+        # LIVE217: compact LIMIT needle / tick marks.  Keeps ANGLE clean while making risk feel alive.
+        tick_col = QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 52)
+        painter.setPen(QPen(tick_col, 0.85, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        for tp in (0.33, 0.66, 0.86):
+            tx = limit_bar_x + bar_w * tp
+            painter.drawLine(QPointF(tx, limit_bar_y - 2), QPointF(tx, limit_bar_y + limit_bar_h + 3))
+        risk_x = limit_bar_x + bar_w * clamp(limit_value / 100.0, 0.0, 1.0)
+        needle_col = QColor(limit_col); needle_col.setAlpha(214)
+        painter.setPen(QPen(needle_col, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(risk_x, limit_bar_y - 5), QPointF(risk_x, limit_bar_y + limit_bar_h + 6))
+        painter.setBrush(QColor(limit_col.red(), limit_col.green(), limit_col.blue(), 92))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QPointF(risk_x, limit_bar_y + limit_bar_h * 0.5), 3.2, 3.2)
         self.draw_graffiti_arrow(painter, limit_bar_x + bar_w - 6, limit_bar_y + 15, limit_bar_x + bar_w + 10, limit_bar_y + 12, limit_col, 1.25, 52)
         self.draw_graffiti_cross(painter, limit_bar_x - 10, limit_bar_y + 6, limit_col, 0.64, 46)
         painter.setFont(QFont("Bahnschrift", self._font_size(15), QFont.Weight.Bold))
@@ -4065,47 +4549,77 @@ class AngleOverlay(QWidget):
             self.draw_popup_drag_hint(painter, x, y, w, h, "OPERATION MOVE", QColor(255, 156, 64))
             return
 
+        # LIVE219: operation popups are three clean action hits only.
+        # No THROTTLE / COUNTER text popups. Keep it readable, short, and not shaky.
         color_map = {
-            "HANDBRAKE!": QColor(255, 168, 64, 248),
-            "CLUTCH KICK!": QColor(184, 118, 255, 248),
-            "FOOT BRAKE!": QColor(255, 96, 88, 248),
+            "HANDBRAKE": QColor(255, 168, 64, 246),
+            "CLUTCH": QColor(184, 118, 255, 246),
+            "BRAKE": QColor(255, 96, 88, 246),
         }
         visible_text = self.operation_popup_text
         accent = color_map.get(visible_text, QColor(245, 248, 255, 242))
 
+        total = max(1, int(getattr(self, "operation_popup_total_ttl", 1)))
+        remain = max(0, int(getattr(self, "operation_popup_ttl", 0)))
+        life = remain / total
+        # Quick snap-in, calm hold, short fade-out.
+        alpha_scale = clamp(min(1.0, life * 3.4), 0.0, 1.0)
+        if life > 0.78:
+            alpha_scale = clamp((1.0 - life) / 0.22, 0.0, 1.0)
+        slide = int((1.0 - alpha_scale) * -8)
+        alpha = int(255 * alpha_scale)
+        if alpha <= 4:
+            return
+
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setOpacity(alpha_scale)
 
-        shell_rect = QRectF(x + 14, y + 14, w - 28, h - 24)
-
-        # Text-only operation popup: no frame / no solid background, but more readable and punchy.
-        accent_soft = QColor(accent)
-        accent_soft.setAlpha(42)
-        accent_core = QColor(accent)
-        accent_core.setAlpha(158)
-
+        shell_rect = QRectF(x + 14, y + 14 + slide, w - 28, h - 24)
         mid_y = shell_rect.center().y() + 7
-        painter.setPen(QPen(accent_soft, 3.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawLine(QPointF(shell_rect.left() + 88, shell_rect.bottom() - 12), QPointF(shell_rect.right() - 38, shell_rect.bottom() - 12))
-        painter.setPen(QPen(accent_core, 2.1, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawLine(QPointF(shell_rect.left() + 98, shell_rect.bottom() - 12), QPointF(shell_rect.right() - 72, shell_rect.bottom() - 12))
-        painter.setPen(QPen(accent_core, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawLine(QPointF(shell_rect.left() + 18, mid_y), QPointF(shell_rect.left() + 54, mid_y - 4))
-        painter.drawLine(QPointF(shell_rect.right() - 54, mid_y + 4), QPointF(shell_rect.right() - 18, mid_y))
-        painter.setPen(QPen(QColor(248, 250, 252, 84), 1.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawLine(QPointF(shell_rect.left() + 34, mid_y + 9), QPointF(shell_rect.left() + 50, mid_y + 7))
-        painter.drawLine(QPointF(shell_rect.right() - 50, mid_y - 7), QPointF(shell_rect.right() - 34, mid_y - 9))
 
+        # Clean technical underline.  No multi-direction text haze.
+        accent_line_soft = QColor(accent)
+        accent_line_soft.setAlpha(36)
+        accent_line_core = QColor(accent)
+        accent_line_core.setAlpha(142)
+        white_line = QColor(248, 250, 252, 64)
+
+        painter.setPen(QPen(accent_line_soft, 3.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(shell_rect.left() + 94, shell_rect.bottom() - 13), QPointF(shell_rect.right() - 52, shell_rect.bottom() - 13))
+        painter.setPen(QPen(accent_line_core, 1.65, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(shell_rect.left() + 108, shell_rect.bottom() - 13), QPointF(shell_rect.right() - 92, shell_rect.bottom() - 13))
+        painter.setPen(QPen(accent_line_core, 1.45, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(shell_rect.left() + 24, mid_y), QPointF(shell_rect.left() + 52, mid_y - 3))
+        painter.drawLine(QPointF(shell_rect.right() - 52, mid_y + 3), QPointF(shell_rect.right() - 24, mid_y))
+        painter.setPen(QPen(white_line, 0.9, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(shell_rect.left() + 38, mid_y + 8), QPointF(shell_rect.left() + 52, mid_y + 6))
+        painter.drawLine(QPointF(shell_rect.right() - 52, mid_y - 6), QPointF(shell_rect.right() - 38, mid_y - 8))
+
+        # Small end markers only, so the popup feels designed but not noisy.
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(accent.red(), accent.green(), accent.blue(), 24))
-        painter.drawEllipse(QPointF(shell_rect.left() + 28, mid_y), 6.0, 6.0)
-        painter.drawEllipse(QPointF(shell_rect.right() - 28, mid_y), 6.0, 6.0)
+        marker = QColor(accent)
+        marker.setAlpha(34)
+        painter.setBrush(marker)
+        painter.drawEllipse(QPointF(shell_rect.left() + 30, mid_y), 4.8, 4.8)
+        painter.drawEllipse(QPointF(shell_rect.right() - 30, mid_y), 4.8, 4.8)
 
-        painter.setFont(QFont("Arial Black", self._font_size(28 if len(visible_text) <= 12 else 24)))
-        text_rect = QRectF(shell_rect.left() + 18, shell_rect.top() + 10, shell_rect.width() - 36, shell_rect.height() - 12)
-        self.draw_popup_text_layers(painter, text_rect, visible_text, accent, hero=True)
+        painter.setFont(QFont("Arial Black", self._font_size(29 if len(visible_text) <= 9 else 25)))
+        text_rect = QRectF(shell_rect.left() + 20, shell_rect.top() + 8, shell_rect.width() - 40, shell_rect.height() - 12)
+
+        # Crisp operation text: one shadow, one accent edge, one white body.
+        shadow = QColor(0, 0, 0, 168)
+        painter.setPen(shadow)
+        painter.drawText(text_rect.translated(2, 2), Qt.AlignmentFlag.AlignCenter, visible_text)
+        edge = QColor(accent)
+        edge.setAlpha(96)
+        painter.setPen(edge)
+        painter.drawText(text_rect.translated(0, 1), Qt.AlignmentFlag.AlignCenter, visible_text)
+        painter.setPen(QColor(255, 255, 255, alpha))
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, visible_text)
 
         painter.restore()
+
     def draw_text_block(self, painter):
         abs_angle = abs(self.display_angle)
         rate = rating_for_angle(abs_angle)
@@ -4180,7 +4694,8 @@ class AngleOverlay(QWidget):
         angle_y = min(angle_anchor.y() + self._s(56), self.height() - self._s(66))
         angle_rect = QRectF(angle_anchor.x() - self._s(14), angle_y, self._s(222), self._s(66))
         angle_core = QColor(255, 255, 255, 255)
-        angle_accent = QColor(255, 112, 142, 255)
+        # LIVE220: accent follows angle side, but only on the number/marker itself.
+        angle_accent = QColor(255, 112, 142, 255) if self.display_angle >= 0 else QColor(118, 240, 255, 255)
 
         # Compact contrast plate so the number reads better against gameplay.
         plate_rect = QRectF(angle_rect.right() - self._s(168), angle_rect.y() + self._s(8), self._s(164), self._s(44))
@@ -4189,29 +4704,26 @@ class AngleOverlay(QWidget):
         painter.drawRoundedRect(plate_rect.translated(0, 1), 9, 9)
         painter.setBrush(QColor(16, 18, 22, 148))
         painter.drawRoundedRect(plate_rect, 9, 9)
-        painter.setPen(QPen(QColor(angle_accent.red(), angle_accent.green(), angle_accent.blue(), 78), 1.3))
+        painter.setPen(QPen(QColor(angle_accent.red(), angle_accent.green(), angle_accent.blue(), 112), 1.55))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(plate_rect.adjusted(0.6, 0.6, -0.6, -0.6), 9, 9)
 
-        # Higher-energy numeric stack: deeper shadow, stronger halo, crisp white core.
+        # LIVE220: sharpen the ANGLE number itself; no wide blur behind the gauge.
         for dx, dy, col in (
-            (4, 4, QColor(0, 0, 0, 208)),
-            (2, 3, QColor(0, 0, 0, 146)),
-            (-4, 0, QColor(angle_accent.red(), angle_accent.green(), angle_accent.blue(), 112)),
-            (4, 0, QColor(angle_accent.red(), angle_accent.green(), angle_accent.blue(), 112)),
-            (0, -3, QColor(angle_accent.red(), angle_accent.green(), angle_accent.blue(), 168)),
-            (0, 3, QColor(angle_accent.red(), angle_accent.green(), angle_accent.blue(), 118)),
-            (-1, -1, QColor(255, 246, 250, 104)),
+            (4, 4, QColor(0, 0, 0, 224)),
+            (2, 2, QColor(0, 0, 0, 172)),
+            (-2, 0, QColor(angle_accent.red(), angle_accent.green(), angle_accent.blue(), 96)),
+            (2, 0, QColor(angle_accent.red(), angle_accent.green(), angle_accent.blue(), 96)),
+            (0, -1, QColor(255, 255, 255, 86)),
         ):
             painter.setPen(col)
             painter.drawText(angle_rect.translated(dx, dy), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, angle_text)
         painter.setPen(angle_core)
         painter.drawText(angle_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, angle_text)
         # Stronger accent under the numeric angle only.
-        self.draw_marker_line(painter, angle_rect.x() + 6, angle_rect.y() + 58, angle_rect.x() + 146, angle_rect.y() + 52, angle_accent, 4.8, 220)
-        self.draw_graffiti_arrow(painter, angle_rect.x() + 136, angle_rect.y() + 24, angle_rect.x() + 178, angle_rect.y() + 14, angle_accent, 2.7, 146)
-        self.draw_clean_spray(painter, angle_rect.x() + 126, angle_rect.y() + 48, angle_accent, 0.82, 42)
-        self.draw_graffiti_cross(painter, angle_rect.x() + 176, angle_rect.y() + 42, angle_accent, 1.02, 104)
+        self.draw_marker_line(painter, angle_rect.x() + 18, angle_rect.y() + 58, angle_rect.x() + 150, angle_rect.y() + 53, angle_accent, 3.8, 198)
+        self.draw_graffiti_arrow(painter, angle_rect.x() + 140, angle_rect.y() + 24, angle_rect.x() + 174, angle_rect.y() + 15, angle_accent, 2.15, 118)
+        self.draw_graffiti_cross(painter, angle_rect.x() + 176, angle_rect.y() + 42, angle_accent, 0.82, 76)
 
         hold_anchor = self.curve_point(-0.96, layout)
         hold_color = hold_color_for_seconds(self.hold_seconds)
@@ -4443,6 +4955,92 @@ class AngleOverlay(QWidget):
         painter.restore()
         return True
 
+    def draw_data_connection_overlay(self, painter):
+        # Beginner-facing connection helper.  This is intentionally drawn on top
+        # of the HUD so first-time users know whether FH6 Data Out is configured.
+        if self.demo_mode:
+            return
+
+        now = time.monotonic()
+        waiting = self.packet_count == 0
+        stale = self.packet_count > 0 and self.last_packet_ms > 3000
+        show_connected = self.packet_count > 0 and self.last_packet_ms <= 3000 and now < self.connection_notice_until
+
+        if not waiting and not stale and not show_connected and not self.udp_error:
+            return
+
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            geo = screen.availableGeometry()
+            sw, sh = geo.width(), geo.height()
+        else:
+            sw, sh = self.width(), self.height()
+
+        scale = 0.78 if sh < 1200 else 1.0
+        box_w = int(620 * scale)
+        box_h = int(174 * scale)
+        x = int((sw - box_w) * 0.5)
+        y = int(max(26, sh * 0.075))
+        rect = QRectF(x, y, box_w, box_h)
+
+        if self.udp_error:
+            title = "UDP PORT ERROR"
+            line1 = "Another app may already be using port 5300."
+            line2 = "Close old HUD / SimHub listener, then restart this HUD."
+            accent = QColor(255, 80, 92)
+        elif waiting:
+            dots = "." * (int(self.data_wait_pulse * 2.0) % 4)
+            title = f"WAITING FOR FH6 DATA OUT{dots}"
+            line1 = "In FH6 settings, turn Data Out ON."
+            line2 = "IP Address: 127.0.0.1    Port: 5300"
+            accent = QColor(STREET_AMBER)
+        elif stale:
+            title = "FH6 DATA DISCONNECTED"
+            line1 = "No telemetry received for a few seconds."
+            line2 = "Check FH6 Data Out is still ON: 127.0.0.1 : 5300"
+            accent = QColor(255, 80, 92)
+        else:
+            title = "FH6 DATA CONNECTED"
+            line1 = "Telemetry received. HUD is ready."
+            line2 = "Exit HUD: Ctrl + Shift + Q"
+            accent = QColor(STREET_MINT)
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(2, 7, 12, 218))
+        painter.drawRoundedRect(rect, 16 * scale, 16 * scale)
+
+        glow = QColor(accent)
+        glow.setAlpha(70)
+        painter.setPen(QPen(glow, 7 * scale, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawRoundedRect(rect.adjusted(2, 2, -2, -2), 16 * scale, 16 * scale)
+
+        edge = QColor(accent)
+        edge.setAlpha(220)
+        painter.setPen(QPen(edge, 2.0 * scale, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 16 * scale, 16 * scale)
+
+        painter.setFont(QFont("Arial Black", max(16, int(24 * scale))))
+        painter.setPen(QColor(252, 255, 255, 245))
+        painter.drawText(QRectF(x + 26 * scale, y + 18 * scale, box_w - 52 * scale, 34 * scale), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, title)
+
+        painter.setFont(QFont("Bahnschrift", max(11, int(16 * scale)), QFont.Weight.Bold))
+        painter.setPen(QColor(226, 238, 245, 235))
+        painter.drawText(QRectF(x + 28 * scale, y + 66 * scale, box_w - 56 * scale, 24 * scale), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, line1)
+
+        painter.setFont(QFont("Consolas", max(11, int(17 * scale)), QFont.Weight.Bold))
+        painter.setPen(edge)
+        painter.drawText(QRectF(x + 28 * scale, y + 102 * scale, box_w - 56 * scale, 26 * scale), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, line2)
+
+        painter.setFont(QFont("Bahnschrift", max(9, int(12 * scale)), QFont.Weight.Bold))
+        painter.setPen(QColor(185, 205, 215, 210))
+        painter.drawText(QRectF(x + 28 * scale, y + box_h - 32 * scale, box_w - 56 * scale, 20 * scale), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "If values do not move, FH6 Data Out is usually the cause.")
+
+        painter.restore()
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -4458,6 +5056,7 @@ class AngleOverlay(QWidget):
             self.draw_control_notice(painter)
             return
 
+        # LIVE220: keep ANGLE clean; no background rail/back-glow behind the main gauge.
         self.draw_segmented_arc(painter)
         self.draw_curve_ticks(painter)
         self.draw_angle_labels(painter)
@@ -4495,6 +5094,7 @@ class AngleOverlay(QWidget):
         if self.panel_visibility.get("steer", True):
             self.draw_steer_panel(painter)
 
+        self.draw_data_connection_overlay(painter)
         self.draw_key_help(painter)
         self.draw_control_notice(painter)
 

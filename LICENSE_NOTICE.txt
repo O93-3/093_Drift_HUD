@@ -1,8 +1,7 @@
-093 Drift HUD - Public Test 01
+093 Drift HUD - Public Test 02
 
-Copyright (c) 2026 おくすりさん。
+This package is a public test build of 093 Drift HUD.
+Use in your own environment and judgment.
 
-This public test package is provided for testing and feedback.
-A formal open-source license can be added later if the project is released as open source.
-
-Until then, please do not redistribute modified builds as official releases.
+このパッケージは 093 Drift HUD のPublic Test版です。
+使用は各自の環境・判断でお願いします。

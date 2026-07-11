@@ -1,75 +1,39 @@
-# Release Notes - 093 Drift HUD Public Test 01
+# Release Notes - 093 Drift HUD Public Test 02
 
-First public test package for 093 Drift HUD.
+## LIVE222 - Public Test 02 release candidate
 
-## Includes
+- Consolidated the Public Test 02 visual updates.
+- Cleaned release notes and README for public release.
+- Kept telemetry receiver stable from the working LIVE209+ line.
+- No DATA STATUS / WAITING helper changes from the broken LIVE205-LIVE208 path.
 
-- ANGLE display
-- HOLD timer and meter
-- CAR STATUS
-- G TELEMETRY
-- TRACK MAP
-- WHEEL / COUNTER
-- INPUT / CAR INFO
-- HUD profiles
-- SimHub passthrough config
-- Global hotkeys
-- Movable panels
+## Included visual direction
 
-## Public Test 01 final adjustment
-
-- WHEEL / COUNTER zero X position follows the ANGLE gauge zero X position.
-- Zero marker is drawn on top of the WHEEL / COUNTER bars.
-- Horizontal sync only.
-- No telemetry logic changes.
-- No SimHub changes.
-
-## Telemetry
-
-FH6 Data Out:
-
-```text
-127.0.0.1:5300
-```
-
-Optional SimHub passthrough:
-
-```text
-127.0.0.1:8001
-```
-
-## Notes
-
-- This is not a final stable release.
-- Visual balance may change.
-- Telemetry detection may change.
-- Layout may change.
-- Windows exe should be built on Windows using `build_windows_exe.bat`.
+- Operation popups are limited to `HANDBRAKE`, `CLUTCH`, `BRAKE`.
+- `THROTTLE` / `COUNTER` text popups remain removed.
+- G TELEMETRY reactive glow is kept.
+- ANGLE remains clean with no noisy backglow or scan rail.
+- CAR STATUS, CAR INFO, INPUT, TRACK MAP, WHEEL / COUNTER visual texture improvements are included.
+- 1080P final safety pass is included.
 
 
-Exit HUD:
+## LIVE223 - Public Test 02 GitHub Release Ready
 
-```text
-Ctrl + Shift + Q
-```
-
-
-1080p safety:
-- On displays lower than 1200px high, the HUD now starts in 1080P STREAM automatically.
-- 1440p users still start with the normal 1440P STREAM layout.
-- Users can still switch profiles with Ctrl + F9.
+- Cleaned root package for GitHub upload.
+- Removed old per-LIVE development notes from the release-ready package.
+- Removed Public Test 01 release body to avoid confusion.
+- Updated public user README with English/Japanese setup, FH6 Data Out, SimHub 8001, ZIP extraction, and exit instructions.
+- Kept telemetry receiver and HUD drawing behavior unchanged from LIVE222.
 
 
-LIVE191 1080p compact fix:
-- 1080P STREAM / 1080P FULL now use smaller dedicated panel geometry and compact font scaling.
-- Low-height screens still auto-start in 1080P STREAM.
+### LIVE224 / Layout safety update
 
+JP:
+- 1080Pと1440Pのレイアウト保存を別管理にしました。
+- 1080P環境の初回起動は 1080P FULL になります。
+- WHEEL / COUNTER と INPUT / CAR INFO が見える状態で起動します。
 
-LIVE192 force-exit cleanup:
-- Ctrl + Shift + Q now stops HUD timers, closes UDP sockets, quits the Qt app, and force-exits if Windows leaves the overlay in background processes.
-
-
-LIVE193 1080P TRUE SCALE SELF TEST
-- 1080P profile uses 0.75x true-scale sizing from 1440p.
-- Starts in 1080P STREAM for immediate testing.
-- Offsets are scaled in 1080P so 1440p saved layout does not explode on 1080p.
+EN:
+- Layout positions are now stored separately for 1080P and 1440P profiles.
+- First startup on 1080P / low-height displays uses 1080P FULL.
+- WHEEL / COUNTER and INPUT / CAR INFO are visible by default.

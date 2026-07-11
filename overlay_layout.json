@@ -1,38 +1,154 @@
 {
-  "vehicle_info": [
-    26.0,
-    26.0
-  ],
-  "input": [
-    4.0,
-    115.0
-  ],
-  "drift_panel": [
-    23.0,
-    137.0
-  ],
-  "style_panel": [
-    -1732.0,
-    383.0
-  ],
-  "map_panel": [
-    24.0,
-    72.0
-  ],
-  "g_meter": [
-    24.0,
-    154.0
-  ],
-  "steer_panel": [
-    0.0,
-    135.0
-  ],
-  "popup_panel": [
-    -5.0,
-    236.0
-  ],
-  "operation_popup_panel": [
-    638.0,
-    854.0
-  ]
+  "1440P STREAM": {
+    "vehicle_info": [
+      26.0,
+      26.0
+    ],
+    "input": [
+      4.0,
+      115.0
+    ],
+    "drift_panel": [
+      23.0,
+      137.0
+    ],
+    "style_panel": [
+      -1732.0,
+      383.0
+    ],
+    "map_panel": [
+      24.0,
+      72.0
+    ],
+    "g_meter": [
+      24.0,
+      154.0
+    ],
+    "steer_panel": [
+      0.0,
+      135.0
+    ],
+    "popup_panel": [
+      -5.0,
+      236.0
+    ],
+    "operation_popup_panel": [
+      638.0,
+      854.0
+    ]
+  },
+  "1440P CLEAN": {
+    "vehicle_info": [
+      26.0,
+      26.0
+    ],
+    "input": [
+      4.0,
+      115.0
+    ],
+    "drift_panel": [
+      23.0,
+      137.0
+    ],
+    "style_panel": [
+      -1732.0,
+      383.0
+    ],
+    "map_panel": [
+      24.0,
+      72.0
+    ],
+    "g_meter": [
+      24.0,
+      154.0
+    ],
+    "steer_panel": [
+      0.0,
+      135.0
+    ],
+    "popup_panel": [
+      -5.0,
+      236.0
+    ],
+    "operation_popup_panel": [
+      638.0,
+      854.0
+    ]
+  },
+  "1080P STREAM": {
+    "vehicle_info": [
+      19.5,
+      19.5
+    ],
+    "input": [
+      3.0,
+      86.25
+    ],
+    "drift_panel": [
+      17.25,
+      102.75
+    ],
+    "style_panel": [
+      -1299.0,
+      287.25
+    ],
+    "map_panel": [
+      18.0,
+      54.0
+    ],
+    "g_meter": [
+      18.0,
+      115.5
+    ],
+    "steer_panel": [
+      0.0,
+      0.0
+    ],
+    "popup_panel": [
+      -3.75,
+      177.0
+    ],
+    "operation_popup_panel": [
+      478.5,
+      390.0
+    ]
+  },
+  "1080P FULL": {
+    "vehicle_info": [
+      19.5,
+      9.5
+    ],
+    "input": [
+      -4.0,
+      84.25
+    ],
+    "drift_panel": [
+      17.25,
+      42.75
+    ],
+    "style_panel": [
+      -1299.0,
+      287.25
+    ],
+    "map_panel": [
+      16.0,
+      43.0
+    ],
+    "g_meter": [
+      17.0,
+      64.5
+    ],
+    "steer_panel": [
+      40.0,
+      -91.0
+    ],
+    "popup_panel": [
+      2.25,
+      206.0
+    ],
+    "operation_popup_panel": [
+      479.5,
+      627.0
+    ]
+  }
 }
