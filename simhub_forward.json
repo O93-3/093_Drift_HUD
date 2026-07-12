@@ -1,6 +1,0 @@
-{
-  "enabled": true,
-  "host": "127.0.0.1",
-  "port": 8001,
-  "note": "Set FH6 Data Out to 127.0.0.1:5300. Set SimHub to listen on 127.0.0.1:8001. Use a different port here if SimHub uses another one."
-}
