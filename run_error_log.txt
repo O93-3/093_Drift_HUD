@@ -1,0 +1,14 @@
+OKUSURI 093 DRIFT HUD START 
+DATE 2026/07/12 TIME  4:16:43.57 
+FOLDER C:\Users\junxc\Downloads\093_DRIFT_HUD_PUBLIC_TEST_02_LIVE226_GITHUB_UPLOAD 
+ 
+Using conda: C:\Users\junxc\anaconda3\Scripts\conda.exe 
+---- check env okusuri_hud_py312 ---- 
+Python 3.12.13
+
+---- PyQt6 check/install ---- 
+PyQt6 OK
+
+---- START main.py ---- 
+^C
+^C

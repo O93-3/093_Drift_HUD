@@ -1,0 +1,3 @@
+2026-07-12 04:16:55,921 [INFO] === 093 LAB. DRIFT DATA SYSTEM START ===
+2026-07-12 04:16:55,922 [INFO] base_dir=C:\Users\junxc\Downloads\093_DRIFT_HUD_PUBLIC_TEST_02_LIVE226_GITHUB_UPLOAD
+2026-07-12 04:16:55,934 [INFO] hud_config loaded: splash=True duration=13.9 simhub=127.0.0.1:8001 enabled=True

@@ -1,0 +1,7 @@
+093 Drift HUD - Public Test 02
+
+This package is a public test build of 093 Drift HUD.
+Use in your own environment and judgment.
+
+このパッケージは 093 Drift HUD のPublic Test版です。
+使用は各自の環境・判断でお願いします。
