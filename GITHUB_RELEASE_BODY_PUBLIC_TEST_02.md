@@ -39,18 +39,51 @@ Please extract the ZIP before running. Do not run directly from inside the ZIP.
 
 ---
 
-## FH6 Data Out / FH6側設定
+## FH6 game settings / FH6ゲーム内設定
 
-Set FH6 Data Out to:  
-FH6のData Outを以下に設定してください。
+HUDを動かすには、FH6側で **テレメトリのデータ出力** をオンにしてください。
+
+ゲーム内で以下の順番に開きます。
 
 ```text
-IP Address: 127.0.0.1
-Port: 5300
+設定
+↓
+画面表示とゲームプレイ
+↓
+テレメトリ
 ```
 
-If the HUD starts but the values do not move, check FH6 Data Out first.  
-HUDは起動したのに数値が動かない場合は、まずFH6側のData Out設定を確認してください。
+テレメトリ画面の **データ出力** を以下のように設定します。
+
+```text
+データ出力: オン
+データ出力IPアドレス: 127.0.0.1
+データ出力IPポート: 5300
+```
+
+HUDはこの `127.0.0.1:5300` でFH6からのテレメトリを受信します。
+
+HUDは起動しているのに数値が動かない場合は、まずFH6側で次を確認してください。
+
+```text
+データ出力がオンになっているか
+IPアドレスが 127.0.0.1 になっているか
+ポートが 5300 になっているか
+```
+
+English quick setup:
+
+```text
+Settings
+↓
+HUD and Gameplay
+↓
+Telemetry
+
+Data Out: On
+Data Out IP Address: 127.0.0.1
+Data Out IP Port: 5300
+```
 
 ---
 
@@ -92,9 +125,11 @@ Ctrl + Shift + Q
 - CAR STATUS atmosphere panel and LIMIT needle texture
 - CAR INFO meter-style RPM segments
 - TRACK MAP texture and recent-line readability
-- WHEEL / COUNTER visual texture
+- TRACK MAP east/west movement fix
+- WHEEL / COUNTER visual texture and label position fix
 - ANGLE remains clean: no noisy backglow or scan rail
-- 1080P safety pass for panel bounds and density
+- 1080P / 1440P layout positions are stored separately
+- 1080P first startup uses 1080P FULL
 
 - 操作ポップは `HANDBRAKE`, `CLUTCH`, `BRAKE` のみに整理
 - 分かりにくい `THROTTLE` / `COUNTER` 文字ポップは削除
@@ -103,9 +138,11 @@ Ctrl + Shift + Q
 - CAR STATUSを雰囲気パネル化、LIMITニードルを追加
 - CAR INFOにメーター風RPMセグメントを追加
 - TRACK MAPの質感と走行ラインの見やすさを調整
-- WHEEL / COUNTERの見た目を調整
+- TRACK MAPの東西反転を修正
+- WHEEL / COUNTERの見た目と文字位置を調整
 - ANGLEは主役としてクリーン維持。うるさいバックグローやスキャンレールは無し
-- 1080P環境向けに枠はみ出し・密度を再調整
+- 1080P / 1440P のレイアウト保存を別管理
+- 1080P環境の初回起動は 1080P FULL
 
 ---
 
@@ -116,16 +153,3 @@ Public Test版です。環境によって正常に動作しない場合があり
 
 Use at your own discretion.  
 使用は各自の判断でお願いします。
-
-
-### LIVE224 / Layout safety update
-
-JP:
-- 1080Pと1440Pのレイアウト保存を別管理にしました。
-- 1080P環境の初回起動は 1080P FULL になります。
-- WHEEL / COUNTER と INPUT / CAR INFO が見える状態で起動します。
-
-EN:
-- Layout positions are now stored separately for 1080P and 1440P profiles.
-- First startup on 1080P / low-height displays uses 1080P FULL.
-- WHEEL / COUNTER and INPUT / CAR INFO are visible by default.

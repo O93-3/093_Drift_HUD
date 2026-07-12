@@ -1,39 +1,42 @@
-# Release Notes - 093 Drift HUD Public Test 02
+# 093 Drift HUD - Public Test 02 Release Notes
 
-## LIVE222 - Public Test 02 release candidate
+## LIVE227 public update
 
-- Consolidated the Public Test 02 visual updates.
-- Cleaned release notes and README for public release.
-- Kept telemetry receiver stable from the working LIVE209+ line.
-- No DATA STATUS / WAITING helper changes from the broken LIVE205-LIVE208 path.
+- TRACK MAP east/west movement fix
+- WHEEL / COUNTER label position adjusted closer to the gauge
+- LIVE226 ANGLE color palette kept
+- 1080P / 1440P layout split kept
+- 1080P first startup uses 1080P FULL
+- Telemetry receive logic unchanged
 
-## Included visual direction
+## FH6 setup note
 
-- Operation popups are limited to `HANDBRAKE`, `CLUTCH`, `BRAKE`.
-- `THROTTLE` / `COUNTER` text popups remain removed.
-- G TELEMETRY reactive glow is kept.
-- ANGLE remains clean with no noisy backglow or scan rail.
-- CAR STATUS, CAR INFO, INPUT, TRACK MAP, WHEEL / COUNTER visual texture improvements are included.
-- 1080P final safety pass is included.
+Open FH6 settings:
 
+```text
+設定 > 画面表示とゲームプレイ > テレメトリ
+```
 
-## LIVE223 - Public Test 02 GitHub Release Ready
+Set:
 
-- Cleaned root package for GitHub upload.
-- Removed old per-LIVE development notes from the release-ready package.
-- Removed Public Test 01 release body to avoid confusion.
-- Updated public user README with English/Japanese setup, FH6 Data Out, SimHub 8001, ZIP extraction, and exit instructions.
-- Kept telemetry receiver and HUD drawing behavior unchanged from LIVE222.
+```text
+データ出力: オン
+データ出力IPアドレス: 127.0.0.1
+データ出力IPポート: 5300
+```
 
+## Public Test 02 visual update
 
-### LIVE224 / Layout safety update
+- Operation popups: HANDBRAKE / CLUTCH / BRAKE only
+- THROTTLE / COUNTER text popups removed
+- INPUT reactive texture
+- G TELEMETRY reactive glow
+- CAR STATUS atmosphere panel
+- CAR INFO meter-style RPM segments
+- TRACK MAP texture and recent-line readability
+- WHEEL / COUNTER texture
+- ANGLE clean visual policy: no noisy backglow or scan rail
 
-JP:
-- 1080Pと1440Pのレイアウト保存を別管理にしました。
-- 1080P環境の初回起動は 1080P FULL になります。
-- WHEEL / COUNTER と INPUT / CAR INFO が見える状態で起動します。
+## Notes
 
-EN:
-- Layout positions are now stored separately for 1080P and 1440P profiles.
-- First startup on 1080P / low-height displays uses 1080P FULL.
-- WHEEL / COUNTER and INPUT / CAR INFO are visible by default.
+Public Test build. Behavior may vary by environment.

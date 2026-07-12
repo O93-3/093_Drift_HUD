@@ -3509,7 +3509,8 @@ class AngleOverlay(QWidget):
         x, y, w, h = self.steer_panel_geometry()
         # LIVE163: viewer-facing WHEEL / COUNTER panel.
         # Same size and position, but the arrows carry the meaning before the text does.
-        label_x = x + 10
+        # LIVE227: move labels toward the shortened gauge so WHEEL / COUNTER no longer float away.
+        # label_x is calculated after bar_x below.
         # LIVE225: WHEEL / COUNTER segments were visually too large.
         # Keep the panel/zero alignment, but make the segmented bars about 30% smaller.
         full_bar_x = x + 82
@@ -3523,10 +3524,12 @@ class AngleOverlay(QWidget):
 
         self.draw_marker_line(painter, x + 6, y + 6, x + 68, y + 4, STREET_AMBER, 2.0, 72)
 
+        label_w = 86
+        label_x = bar_x - label_w - 7
         painter.setFont(QFont("Bahnschrift", self._font_size(11), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 252))
-        painter.drawText(QRectF(label_x, row1_y - 6, 74, 22), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "WHEEL")
-        painter.drawText(QRectF(label_x, row2_y - 6, 82, 22), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "COUNTER")
+        painter.drawText(QRectF(label_x, row1_y - 6, label_w, 22), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "WHEEL")
+        painter.drawText(QRectF(label_x, row2_y - 6, label_w, 22), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "COUNTER")
 
         painter.setFont(QFont("Bahnschrift", self._font_size(8), QFont.Weight.Bold))
         painter.setPen(QColor(STREET_OFFWHITE.red(), STREET_OFFWHITE.green(), STREET_OFFWHITE.blue(), 152))
@@ -3932,7 +3935,8 @@ class AngleOverlay(QWidget):
             cz = (min_z + max_z) * 0.5
 
             def mp(px, pz):
-                return QPointF(map_x + map_w * 0.5 - (px - cx) * scale,
+                # LIVE227: Fix east/west flip. PositionX increasing should move right on TRACK MAP.
+                return QPointF(map_x + map_w * 0.5 + (px - cx) * scale,
                                map_y + map_h * 0.5 - (pz - cz) * scale)
 
             prev = None
